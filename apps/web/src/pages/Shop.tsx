@@ -86,12 +86,15 @@ export default function Shop() {
     const matchesCollection =
       selectedCollection === "all" || p.collection?.slug === actualSelectedCollection;
 
+    const normalizedSearchQuery = searchQuery.toLowerCase().replace(/[- ]/g, '');
+    const normalizeString = (str?: string) => str ? str.toLowerCase().replace(/[- ]/g, '') : '';
+
     const matchesSearch =
       !searchQuery.trim() ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.category?.name && p.category.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.collection?.name && p.collection.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      normalizeString(p.name).includes(normalizedSearchQuery) ||
+      normalizeString(p.category?.name).includes(normalizedSearchQuery) ||
+      normalizeString(p.collection?.name).includes(normalizedSearchQuery) ||
+      normalizeString(p.description).includes(normalizedSearchQuery);
 
     const matchesPrice = p.price >= priceRange[0] && p.price <= priceRange[1];
 
