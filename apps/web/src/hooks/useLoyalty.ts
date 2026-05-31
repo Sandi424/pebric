@@ -131,26 +131,29 @@ export function useEarnPoints() {
       if (!user) throw new Error("Not authenticated");
 
       // Get current points
-      const { data: current } = await supabase
+      const { data: current, error: fetchError } = await supabase
         .from("loyalty_points")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
+
+      if (fetchError) throw new Error(`Failed to fetch points: ${fetchError.message}`);
 
       if (!current) {
         // Initialize if doesn't exist
-        await supabase.from("loyalty_points").insert({
+        const { error: insertError } = await supabase.from("loyalty_points").insert({
           user_id: user.id,
           points,
           lifetime_points: points,
           tier: "bronze",
         });
+        if (insertError) throw new Error(`Failed to initialize points: ${insertError.message}`);
       } else {
         const newPoints = current.points + points;
         const newLifetime = current.lifetime_points + points;
         const newTier = calculateTier(newLifetime);
 
-        await supabase
+        const { error: updateError } = await supabase
           .from("loyalty_points")
           .update({
             points: newPoints,
@@ -158,20 +161,28 @@ export function useEarnPoints() {
             tier: newTier,
           })
           .eq("user_id", user.id);
+
+        if (updateError) throw new Error(`Failed to update points: ${updateError.message}`);
       }
 
       // Record transaction
-      await supabase.from("loyalty_transactions").insert({
+      const { error: txError } = await supabase.from("loyalty_transactions").insert({
         user_id: user.id,
         points,
         type,
         description,
         order_id: order_id || null,
       });
+
+      if (txError) throw new Error(`Failed to record transaction: ${txError.message}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["loyalty-points"] });
       queryClient.invalidateQueries({ queryKey: ["loyalty-transactions"] });
+      toast.success("Points earned!");
+    },
+    onError: (error) => {
+      toast.error("Failed to earn points", { description: error.message });
     },
   });
 }
@@ -190,27 +201,33 @@ export function useRedeemPoints() {
     }) => {
       if (!user) throw new Error("Not authenticated");
 
-      const { data: current } = await supabase
+      const { data: current, error: fetchError } = await supabase
         .from("loyalty_points")
         .select("*")
         .eq("user_id", user.id)
         .single();
 
+      if (fetchError) throw new Error(`Failed to fetch points: ${fetchError.message}`);
+
       if (!current || current.points < points) {
         throw new Error("Insufficient points");
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from("loyalty_points")
         .update({ points: current.points - points })
         .eq("user_id", user.id);
 
-      await supabase.from("loyalty_transactions").insert({
+      if (updateError) throw new Error(`Failed to update points: ${updateError.message}`);
+
+      const { error: txError } = await supabase.from("loyalty_transactions").insert({
         user_id: user.id,
         points: -points,
         type: "redeemed",
         description,
       });
+
+      if (txError) throw new Error(`Failed to record transaction: ${txError.message}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["loyalty-points"] });
