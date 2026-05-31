@@ -374,11 +374,10 @@ export function PromoBannersManager() {
                   </td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                        banner.is_active
+                      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${banner.is_active
                           ? "bg-green-100 text-green-800"
                           : "bg-red-100 text-red-800"
-                      }`}
+                        }`}
                     >
                       {banner.is_active ? "Active" : "Inactive"}
                     </span>
