@@ -57,7 +57,7 @@ export function useGalleryPosts(featured?: boolean, limit: number = 50) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("gallery-posts-realtime")
+      .channel(`gallery-posts-realtime-${Math.random().toString(36).substring(2, 9)}`)
       .on(
         "postgres_changes",
         {

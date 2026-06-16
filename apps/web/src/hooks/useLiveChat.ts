@@ -229,7 +229,7 @@ export function useAdminChatSessions() {
     if (!isAdmin) return;
 
     const channel = supabase
-      .channel("admin-chat-sessions-realtime")
+      .channel(`admin-chat-sessions-realtime-${Math.random().toString(36).substring(2, 9)}`)
       .on(
         "postgres_changes",
         {

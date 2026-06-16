@@ -74,7 +74,7 @@ export function useProducts() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("products-realtime")
+      .channel(`products-realtime-${Math.random().toString(36).substring(2, 9)}`)
       .on(
         "postgres_changes",
         {

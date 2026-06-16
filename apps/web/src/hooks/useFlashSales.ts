@@ -34,7 +34,7 @@ export function useFlashSales() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("flash-sales-realtime")
+      .channel(`flash-sales-realtime-${Math.random().toString(36).substring(2, 9)}`)
       .on(
         "postgres_changes",
         {

@@ -215,7 +215,7 @@ export function useAdminTickets() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("admin-tickets-realtime")
+      .channel(`admin-tickets-realtime-${Math.random().toString(36).substring(2, 9)}`)
       .on(
         "postgres_changes",
         {
