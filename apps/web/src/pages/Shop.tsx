@@ -67,7 +67,7 @@ export default function Shop() {
     if (collection) {
       const lowercaseCol = collection.toLowerCase();
       if (lowercaseCol === "twinning" || lowercaseCol === "pebric") {
-        navigate("/twinning");
+        navigate("/twinning", { replace: true });
         return;
       }
       setSelectedCollection(collection);
