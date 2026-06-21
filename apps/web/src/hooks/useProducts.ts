@@ -172,12 +172,11 @@ export function useProductsByCollection(collectionSlug: string) {
     "winter": "cozy-winter",
     "rainy": "rainy-days"
   };
-  const actualSlug = slugAliasMap[collectionSlug] || collectionSlug;
 
   return useQuery({
-    queryKey: ["products", "collection", actualSlug],
+    queryKey: ["products", "collection", collectionSlug],
     queryFn: async () => {
-      const isSetsCategory = ["twinning", "pebric", "sets"].includes(actualSlug.toLowerCase());
+      const isSetsCategory = ["twinning", "pebric", "sets"].includes(collectionSlug.toLowerCase());
 
       if (isSetsCategory) {
         const { data: category } = await supabase
@@ -203,11 +202,25 @@ export function useProductsByCollection(collectionSlug: string) {
         return data as Product[];
       }
 
-      const { data: collection } = await supabase
+      // 1. Try to find the collection with the exact slug first
+      let { data: collection } = await supabase
         .from("collections")
-        .select("id")
-        .eq("slug", actualSlug)
+        .select("id, slug")
+        .eq("slug", collectionSlug)
         .maybeSingle();
+
+      // 2. If not found, try the alias slug
+      if (!collection) {
+        const alias = slugAliasMap[collectionSlug];
+        if (alias) {
+          const { data: aliasCol } = await supabase
+            .from("collections")
+            .select("id, slug")
+            .eq("slug", alias)
+            .maybeSingle();
+          collection = aliasCol;
+        }
+      }
 
       if (!collection) return [];
 
@@ -232,7 +245,7 @@ export function useProductsByCollection(collectionSlug: string) {
         return undefined;
       }
 
-      const isSetsCategory = ["twinning", "pebric", "sets"].includes(actualSlug.toLowerCase());
+      const isSetsCategory = ["twinning", "pebric", "sets"].includes(collectionSlug.toLowerCase());
       if (isSetsCategory) {
         return cachedProducts.filter(
           (product) =>
@@ -240,14 +253,32 @@ export function useProductsByCollection(collectionSlug: string) {
         );
       }
 
-      return cachedProducts.filter(
-        (product) =>
-          product.is_active && product.collection?.slug === actualSlug,
+      // Check if we have any active products in cache with the exact slug
+      const hasExactMatch = cachedProducts.some(
+        (product) => product.is_active && product.collection?.slug === collectionSlug
       );
+
+      if (hasExactMatch) {
+        return cachedProducts.filter(
+          (product) =>
+            product.is_active && product.collection?.slug === collectionSlug,
+        );
+      }
+
+      // Fallback to alias if it exists
+      const alias = slugAliasMap[collectionSlug];
+      if (alias) {
+        return cachedProducts.filter(
+          (product) =>
+            product.is_active && product.collection?.slug === alias,
+        );
+      }
+
+      return [];
     },
     initialDataUpdatedAt: () =>
       queryClient.getQueryState(["products"])?.dataUpdatedAt,
-    enabled: !!actualSlug,
+    enabled: !!collectionSlug,
     ...CATALOG_QUERY_OPTIONS,
   });
 }

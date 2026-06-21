@@ -92,10 +92,19 @@ export default function Shop() {
       "winter": "cozy-winter",
       "rainy": "rainy-days"
     };
-    const actualSelectedCollection = slugAliasMap[selectedCollection] || selectedCollection;
+
+    let targetSlug = selectedCollection;
+    if (selectedCollection !== "all") {
+      const hasExactMatch = products.some(
+        (product) => product.is_active && product.collection?.slug === selectedCollection
+      );
+      if (!hasExactMatch) {
+        targetSlug = slugAliasMap[selectedCollection] || selectedCollection;
+      }
+    }
 
     const matchesCollection =
-      selectedCollection === "all" || p.collection?.slug === actualSelectedCollection;
+      selectedCollection === "all" || p.collection?.slug === targetSlug;
 
     const normalizedSearchQuery = searchQuery.toLowerCase().replace(/[- ]/g, '');
     const normalizeString = (str?: string) => str ? str.toLowerCase().replace(/[- ]/g, '') : '';
