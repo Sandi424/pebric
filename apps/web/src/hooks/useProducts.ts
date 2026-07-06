@@ -379,7 +379,20 @@ export function useCollections() {
         .order("name");
 
       if (error) throw error;
-      return data as Collection[];
+      
+      const desiredCollections = [
+        { name: "Rainy", slug: "rainy" },
+        { name: "Summer", slug: "summer" },
+        { name: "Winter", slug: "winter" }
+      ];
+
+      return desiredCollections.map((dc) => ({
+        id: `col-${dc.slug}`,
+        name: dc.name,
+        slug: dc.slug,
+        description: null,
+        image_url: null,
+      })) as Collection[];
     },
     staleTime: 0,
     gcTime: 5 * 60 * 1000,
