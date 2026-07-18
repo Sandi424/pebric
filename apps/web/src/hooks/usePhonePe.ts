@@ -66,7 +66,7 @@ export function usePhonePe() {
             body: { merchantTransactionId },
         });
 
-        console.log("PhonePe Verify Response:", { data, error });
+
 
         if (error) throw new Error(error.message || "Failed to verify PhonePe payment");
         if (data?.error) throw new Error(data.error);

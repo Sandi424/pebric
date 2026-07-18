@@ -37,12 +37,10 @@ export default function Collection() {
   const pathSlug = location.pathname.split('/')[1];
   const collectionSlug = slug || (["summer", "winter", "rainy", "twinning"].includes(pathSlug) ? pathSlug : "summer");
   
-  console.log("Collection Debug:", { slug, pathSlug, collectionSlug });
 
   const { data: products = [], isLoading: productsLoading } = useProductsByCollection(collectionSlug);
   const { data: collections = [] } = useCollections();
 
-  console.log("Collection Data:", { productsLength: products.length, collectionsLength: collections.length });
   
   const collection = collections.find(c => c.slug === collectionSlug);
   const [sortBy, setSortBy] = useState<SortOption>("featured");
