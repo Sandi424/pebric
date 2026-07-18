@@ -283,11 +283,13 @@ export default function Admin() {
   });
 
   useEffect(() => {
-    if (!authLoading && (!user || !isAdmin)) {
+    if (!isLoading && !isAdmin) {
       navigate("/");
-      toast.error("Access denied", { description: "Admin access required" });
+      toast.error("Access Denied", {
+        description: "You do not have permission to view the admin panel.",
+      });
     }
-  }, [user, isAdmin, authLoading, navigate]);
+  }, [isLoading, isAdmin, navigate]);
 
   const fetchData = useCallback(async () => {
     if (products.length === 0) setIsLoading(true);

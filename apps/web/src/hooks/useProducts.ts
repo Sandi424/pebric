@@ -200,13 +200,13 @@ export function useProductsByCollection(collectionSlug: string) {
   return useQuery({
     queryKey: ["products", "collection", collectionSlug],
     queryFn: async () => {
-      const isSetsCategory = ["twinning", "pebric", "sets"].includes(collectionSlug.toLowerCase());
+      const isSetsCategory = ["twinning", "pebric", "sets", "set"].includes(collectionSlug.toLowerCase());
 
       if (isSetsCategory) {
         const { data: category } = await supabase
           .from("categories")
           .select("id")
-          .eq("slug", "sets")
+          .eq("slug", "set")
           .maybeSingle();
 
         if (!category) return [];
@@ -269,11 +269,11 @@ export function useProductsByCollection(collectionSlug: string) {
         return undefined;
       }
 
-      const isSetsCategory = ["twinning", "pebric", "sets"].includes(collectionSlug.toLowerCase());
+      const isSetsCategory = ["twinning", "pebric", "sets", "set"].includes(collectionSlug.toLowerCase());
       if (isSetsCategory) {
         return cachedProducts.filter(
           (product) =>
-            product.is_active && product.category?.slug === "sets",
+            product.is_active && product.category?.slug === "set",
         );
       }
 

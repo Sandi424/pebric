@@ -1,0 +1,16 @@
+import { createClient } from "@supabase/supabase-js";
+import * as dotenv from "dotenv";
+
+dotenv.config();
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+async function test() {
+  const { data, count, error } = await supabase.from('products').select('*', { count: 'exact' }).eq('is_active', true);
+  console.log("Active Products count (anon):", count, error ? error.message : "");
+}
+
+test();

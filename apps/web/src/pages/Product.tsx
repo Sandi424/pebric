@@ -176,7 +176,7 @@ export default function Product() {
   const [selectedPetSize, setSelectedPetSize] = useState("");
   const [parentQuantity, setParentQuantity] = useState(1);
   const [petQuantity, setPetQuantity] = useState(1);
-  const { addToCart, addToWishlist, removeFromWishlist, isInWishlist } =
+  const { cartItems, addToCart, addToWishlist, removeFromWishlist, isInWishlist } =
     useCart();
   const { addToCompare, removeFromCompare, isInCompare } = useCompare();
   const { user } = useAuth();
@@ -197,6 +197,15 @@ export default function Product() {
     }
     return sum;
   }, [product, selectedSize, selectedPetSize, parentQuantity, petQuantity, halfPrice]);
+
+  const isVariantInCart = useMemo(() => {
+    if (!product || (!selectedSize && !selectedPetSize)) return false;
+    return cartItems.some(item => 
+      item.id === product.id && 
+      item.ownerSize === (selectedSize || "N/A") && 
+      item.petSize === (selectedPetSize || "N/A")
+    );
+  }, [cartItems, product, selectedSize, selectedPetSize]);
 
   /* Safe access for loading state */
   const images = useMemo(
@@ -620,13 +629,23 @@ export default function Product() {
 
               {/* Action Buttons */}
               <div className="mt-1 flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={handleAddToCart}
-                  variant="hero"
-                  className="h-14 w-full flex-1 sm:w-auto"
-                >
-                  Add to Cart
-                </Button>
+                {isVariantInCart ? (
+                  <Button
+                    onClick={() => navigate("/cart")}
+                    variant="hero"
+                    className="h-14 w-full flex-1 sm:w-auto"
+                  >
+                    Go to Cart
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleAddToCart}
+                    variant="hero"
+                    className="h-14 w-full flex-1 sm:w-auto"
+                  >
+                    Add to Cart
+                  </Button>
+                )}
                 <Button
                   onClick={handleBuyNow}
                   variant="hero-outline"
