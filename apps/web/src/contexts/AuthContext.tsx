@@ -201,22 +201,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error("Not authenticated") };
 
-    const { data, error } = await supabase
+    // Try UPDATE first — this works cleanly with user-level RLS policies
+    const { data: updatedData, error: updateError } = await supabase
       .from("profiles")
-      .upsert({
-        id: user.id,
-        email: user.email,
+      .update({
         ...updates,
+        updated_at: new Date().toISOString(),
       })
+      .eq("id", user.id)
       .select()
       .single();
 
-    if (!error && data) {
-      setProfile(data);
+    if (!updateError && updatedData) {
+      setProfile(updatedData);
+      return { error: null };
     }
 
-    return { error };
+    // If row didn't exist (PGRST116 = no rows returned), INSERT it
+    if (updateError && (updateError.code === "PGRST116" || updateError.message?.includes("no rows"))) {
+      const { data: insertedData, error: insertError } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          email: user.email,
+          ...updates,
+        })
+        .select()
+        .single();
+
+      if (!insertError && insertedData) {
+        setProfile(insertedData);
+        return { error: null };
+      }
+
+      return { error: insertError };
+    }
+
+    return { error: updateError };
   };
+
 
   return (
     <AuthContext.Provider

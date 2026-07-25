@@ -68,6 +68,19 @@ export default function Login() {
       description: "You have successfully logged in.",
     });
 
+    // Check if there were pending Buy Now items to resume
+    try {
+      const pendingItems = sessionStorage.getItem("pebric_buynow_pending");
+      if (pendingItems) {
+        const parsed = JSON.parse(pendingItems);
+        sessionStorage.removeItem("pebric_buynow_pending");
+        navigate("/checkout", { state: { buyNowItems: parsed } });
+        return;
+      }
+    } catch {
+      // ignore storage errors
+    }
+
     // Check if this user is admin to redirect to admin panel
     const { data: roleData } = await supabase
       .from("user_roles")

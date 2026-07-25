@@ -356,6 +356,20 @@ export default function Product() {
       type: isMatchingSet ? ("combo" as const) : ("owner" as const),
     }];
 
+    // If user is not authenticated, save items and redirect to login once
+    if (!user) {
+      try {
+        sessionStorage.setItem("pebric_buynow_pending", JSON.stringify(buyNowItems));
+      } catch {
+        // ignore storage errors
+      }
+      toast.info("Please sign in to continue", {
+        description: "Your selection has been saved. Sign in to complete your purchase.",
+      });
+      navigate("/login");
+      return;
+    }
+
     navigate("/checkout", { state: { buyNowItems } });
   };
 

@@ -196,7 +196,7 @@ function AddressFormContent({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="label">Label (Home, Work, etc) <span className="text-destructive">*</span></Label>
           <Input id="label" value={address.label} onChange={(e) => onChange({ ...address, label: e.target.value })} required />
@@ -260,7 +260,7 @@ function AddressFormContent({
         <Input id="landmark" value={address.landmark || ""} onChange={(e) => onChange({ ...address, landmark: e.target.value })} placeholder="E.g. near apollo hospital" />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="city">City <span className="text-destructive">*</span></Label>
           <Input id="city" value={address.city} onChange={(e) => onChange({ ...address, city: e.target.value })} required />
@@ -288,7 +288,7 @@ function AddressFormContent({
         <Label htmlFor="is_default" className="font-normal cursor-pointer">Set as default address</Label>
       </div>
 
-      <div className="pt-4 flex justify-end gap-3">
+      <div className="pt-4 pb-safe flex justify-end gap-3" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
         <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={isSaving || status === "invalid" || phoneInvalid}>
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

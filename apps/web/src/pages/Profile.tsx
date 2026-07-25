@@ -57,8 +57,26 @@ export default function Profile() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const getErrorMessage = (error: unknown) =>
-    error instanceof Error ? error.message : "Something went wrong";
+  // Handle both standard Error objects and Supabase PostgrestError (which has .message but isn't instanceof Error)
+  const getErrorMessage = (error: unknown): string => {
+    if (!error) return "Something went wrong. Please try again.";
+    if (typeof error === "string") return error;
+    if (typeof error === "object" && error !== null && "message" in error) {
+      const msg = (error as { message: string }).message;
+      // Never show raw Supabase/Postgres internals
+      if (msg.includes("duplicate key") || msg.includes("unique constraint")) {
+        return "This information already exists in your profile.";
+      }
+      if (msg.includes("permission denied") || msg.includes("RLS") || msg.includes("policy")) {
+        return "Permission denied. Please sign out and sign in again.";
+      }
+      if (msg.includes("JWT") || msg.includes("session")) {
+        return "Your session has expired. Please sign in again.";
+      }
+      return msg;
+    }
+    return "Something went wrong. Please try again.";
+  };
 
   const quickLinks = [
     { label: "My Orders", href: "/orders", icon: Package },
@@ -135,12 +153,14 @@ export default function Profile() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate phone
-    if (formData.phone) {
-      const digits = formData.phone.replace(/[\s\-().]/g, "");
+    // Validate phone — only if user has entered something beyond the default prefix
+    const phoneValue = formData.phone?.trim() ?? "";
+    const isPhoneEmpty = !phoneValue || phoneValue === "+91" || phoneValue === "+91 ";
+    if (!isPhoneEmpty) {
+      const digits = phoneValue.replace(/[\s\-().]/g, "");
       if (!PHONE_RE.test(digits)) {
         toast.error("Invalid phone number", {
-          description: "Enter a valid 10-digit Indian mobile number.",
+          description: "Enter a valid 10-digit Indian mobile number (e.g. +91 9876543210).",
         });
         return;
       }
@@ -150,9 +170,13 @@ export default function Profile() {
     try {
       const { error } = await updateProfile({
         full_name: formData.full_name,
-        phone: formData.phone,
+        phone: isPhoneEmpty ? null : formData.phone,
       });
-      if (error) throw error;
+      if (error) {
+        const msg = getErrorMessage(error);
+        toast.error("Failed to update profile", { description: msg });
+        return;
+      }
       toast.success("Profile updated successfully!");
     } catch (error: unknown) {
       toast.error("Failed to update profile", { description: getErrorMessage(error) });

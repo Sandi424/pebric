@@ -13,7 +13,7 @@ export function CompareBar() {
 
   const compareProducts = products.filter((p) => compareIds.includes(p.id));
 
-  const hiddenPaths = ["/compare", "/gallery", "/support"];
+  const hiddenPaths = ["/compare", "/gallery", "/support", "/login", "/signup", "/forgot-password", "/reset-password"];
 
   if (compareIds.length === 0 || hiddenPaths.includes(location.pathname)) return null;
 
