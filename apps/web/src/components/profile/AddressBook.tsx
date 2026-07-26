@@ -116,7 +116,7 @@ export function AddressBook() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{editingAddress?.id ? "Edit Address" : "Add New Address"}</DialogTitle>
           </DialogHeader>
@@ -288,7 +288,7 @@ function AddressFormContent({
         <Label htmlFor="is_default" className="font-normal cursor-pointer">Set as default address</Label>
       </div>
 
-      <div className="pt-4 pb-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:pb-2" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+      <div className="pt-4 pb-2 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
         <Button type="submit" disabled={isSaving || status === "invalid" || phoneInvalid} className="w-full sm:w-auto">
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

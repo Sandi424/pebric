@@ -39,7 +39,8 @@ const DialogContent = React.forwardRef<
         // Mobile: bottom-sheet style — docked to bottom, full width, scrollable
         "fixed z-50 grid w-full gap-4 border bg-background p-6 shadow-lg duration-200",
         "inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl",
-        "pb-[calc(1.5rem+env(safe-area-inset-bottom))]",
+        // Account for the 64px (h-16) MobileBottomNav (z-[70]) that sits above the dialog + device safe area
+        "pb-[calc(4rem+env(safe-area-inset-bottom))]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
