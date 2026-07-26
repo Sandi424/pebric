@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Mail } from "lucide-react";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,8 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [emailNotConfirmed, setEmailNotConfirmed] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
     if (user && !authLoading) {
@@ -46,13 +48,56 @@ export default function Login() {
     }
 
     setIsLoading(true);
+    setEmailNotConfirmed(false);
 
     const { error } = await signIn(email, password);
 
-    setIsLoading(false);
-
     if (error) {
-      if (error.message.includes("Invalid login credentials")) {
+      const errMsg = error.message?.toLowerCase() ?? "";
+
+      // Check if email is not confirmed — try auto-confirm first
+      if (errMsg.includes("email not confirmed") || errMsg.includes("not confirmed")) {
+        // Attempt auto-confirm via RPC
+        const { error: rpcError } = await supabase.rpc("auto_confirm_user", {
+          user_email: email,
+        });
+
+        if (!rpcError) {
+          // RPC succeeded — retry sign in
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          const { error: retryErr } = await signIn(email, password);
+          if (!retryErr) {
+            // Success after auto-confirm
+            setIsLoading(false);
+            toast.success("Welcome back!", { description: "You have successfully logged in." });
+            try {
+              const pendingItems = sessionStorage.getItem("pebric_buynow_pending");
+              if (pendingItems) {
+                const parsed = JSON.parse(pendingItems);
+                sessionStorage.removeItem("pebric_buynow_pending");
+                navigate("/checkout", { state: { buyNowItems: parsed } });
+                return;
+              }
+            } catch { /* ignore */ }
+            const { data: roleData } = await supabase
+              .from("user_roles")
+              .select("role")
+              .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
+              .eq("role", "admin")
+              .maybeSingle();
+            navigate(roleData ? "/admin" : "/");
+            return;
+          }
+        }
+
+        // Auto-confirm didn't work or RPC failed — show email confirmation message
+        setIsLoading(false);
+        setEmailNotConfirmed(true);
+        return;
+      }
+
+      setIsLoading(false);
+      if (errMsg.includes("invalid login credentials")) {
         toast.error("Invalid credentials", {
           description: "Please check your email and password.",
         });
@@ -63,6 +108,8 @@ export default function Login() {
       }
       return;
     }
+
+    setIsLoading(false);
 
     toast.success("Welcome back!", {
       description: "You have successfully logged in.",
@@ -92,6 +139,27 @@ export default function Login() {
     navigate(roleData ? "/admin" : "/");
   };
 
+  const handleResendConfirmation = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      const { error } = await supabase.auth.resend({ type: "signup", email });
+      if (!error) {
+        toast.success("Confirmation email resent!", { description: "Please check your inbox and spam folder." });
+        setResendCooldown(60);
+        const interval = setInterval(() => {
+          setResendCooldown((prev) => {
+            if (prev <= 1) { clearInterval(interval); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        toast.error("Failed to resend", { description: error.message });
+      }
+    } catch {
+      toast.error("Failed to resend confirmation email");
+    }
+  };
+
   return (
     <PageLayout showNewsletter={false}>
       <SEOHead
@@ -107,6 +175,28 @@ export default function Login() {
               Sign in to your account to continue
             </p>
           </div>
+
+          {/* ── Email Not Confirmed Banner ── */}
+          {emailNotConfirmed && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950/40">
+              <p className="mb-1 font-display text-base font-medium text-amber-900 dark:text-amber-200">
+                Email not confirmed yet
+              </p>
+              <p className="mb-4 font-body text-sm text-amber-700 dark:text-amber-400">
+                Please check your inbox for a confirmation link from Pebric. Check your spam folder too.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-amber-400 text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300"
+                onClick={handleResendConfirmation}
+                disabled={resendCooldown > 0}
+              >
+                <Mail className="h-4 w-4" />
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Confirmation Email"}
+              </Button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>

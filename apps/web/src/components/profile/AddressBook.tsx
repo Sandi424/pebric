@@ -288,9 +288,9 @@ function AddressFormContent({
         <Label htmlFor="is_default" className="font-normal cursor-pointer">Set as default address</Label>
       </div>
 
-      <div className="pt-4 pb-safe flex justify-end gap-3" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
-        <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={isSaving || status === "invalid" || phoneInvalid}>
+      <div className="pt-4 pb-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:pb-2" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+        <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+        <Button type="submit" disabled={isSaving || status === "invalid" || phoneInvalid} className="w-full sm:w-auto">
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Address
         </Button>

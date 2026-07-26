@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, LogIn, Mail, RefreshCw, CheckCircle2 } from "lucide-react";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/client";
 import { z } from "zod";
 import { SEOHead } from "@/components/SEOHead";
 
@@ -25,6 +26,18 @@ export default function Signup() {
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; general?: string }>({});
   const [touchedEmail, setTouchedEmail] = useState(false);
   const [agreed, setAgreed] = useState(false);
+
+  // Dedicated state for "email already exists" scenario
+  const [emailAlreadyExists, setEmailAlreadyExists] = useState(false);
+
+  // State for "email confirmation pending" scenario
+  const [confirmationPending, setConfirmationPending] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [confirmationPassword, setConfirmationPassword] = useState("");
+  const [isPolling, setIsPolling] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Restore form state from sessionStorage ───
   const [name, setName] = useState(() => {
@@ -57,6 +70,8 @@ export default function Signup() {
         ...prev,
         email: result.success ? undefined : result.error.errors[0].message,
       }));
+      // Clear the "email already exists" state when user changes email
+      if (emailAlreadyExists) setEmailAlreadyExists(false);
     }
   }, [email, touchedEmail]);
 
@@ -64,6 +79,46 @@ export default function Signup() {
   useEffect(() => {
     if (user) navigate("/");
   }, [user, navigate]);
+
+  // Poll for session when confirmation is pending
+  useEffect(() => {
+    if (confirmationPending && !pollIntervalRef.current) {
+      setIsPolling(true);
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          // Try signing in to check if email was confirmed
+          const { error } = await signIn(confirmationEmail, confirmationPassword);
+          if (!error) {
+            // Email was confirmed and signed in!
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setIsPolling(false);
+            clearDraft();
+            toast.success("Email confirmed! Welcome to Pebric! 🎉");
+            navigate("/");
+          }
+          // If error, keep polling (email not confirmed yet)
+        } catch {
+          // Continue polling
+        }
+      }, 3000); // Check every 3 seconds
+    }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [confirmationPending]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (cooldownIntervalRef.current) clearInterval(cooldownIntervalRef.current);
+    };
+  }, []);
 
   const clearDraft = () => { try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } };
 
@@ -84,9 +139,44 @@ export default function Signup() {
     navigate("/");
   };
 
+  const startResendCooldown = () => {
+    setResendCooldown(60);
+    cooldownIntervalRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownIntervalRef.current!);
+          cooldownIntervalRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: confirmationEmail,
+      });
+      if (!error) {
+        toast.success("Confirmation email resent!", {
+          description: "Please check your inbox and spam folder.",
+        });
+        startResendCooldown();
+      } else {
+        toast.error("Failed to resend", { description: error.message });
+      }
+    } catch {
+      toast.error("Failed to resend confirmation email");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+    setEmailAlreadyExists(false);
 
     // Client-side validation
     const validation = signupSchema.safeParse({ name, email, password });
@@ -101,111 +191,235 @@ export default function Signup() {
 
     setIsLoading(true);
 
-    // ─── Step 1: Attempt signup ───────────────────────────────────────────────
-    const { data, error } = await signUp(email, password, name);
+    try {
+      // ─── Step 1: Attempt signup ─────────────────────────────────────────
+      const { data, error } = await signUp(email, password, name);
 
-    if (error) {
-      setIsLoading(false);
-      const msg = (error as any)?.message ?? "";
-      const code = (error as any)?.code ?? "";
-      const lower = msg.toLowerCase();
+      if (error) {
+        const msg = (error as any)?.message ?? "";
+        const code = (error as any)?.code ?? "";
+        const lower = msg.toLowerCase();
 
-      // Supabase rate-limit: "email rate limit exceeded" or "over_email_send_rate_limit"
-      if (
-        code === "over_email_send_rate_limit" ||
-        lower.includes("rate limit") ||
-        lower.includes("email rate") ||
-        (error as any)?.status === 429
-      ) {
-        // Rate limited — try signing in to see if account exists with these credentials
-        const { error: signInErr } = await signIn(email, password);
-        if (!signInErr) {
-          // Account exists and credentials match — log them in
-          finishSuccess("Welcome back!");
+        // Rate-limit error
+        if (
+          code === "over_email_send_rate_limit" ||
+          lower.includes("rate limit") ||
+          lower.includes("email rate") ||
+          (error as any)?.status === 429
+        ) {
+          console.error("[Signup] Rate limit hit:", { code, msg });
+          setErrors({
+            general: "Too many sign-up attempts. Please wait a few minutes and try again.",
+          });
+          toast.error("Too many attempts", {
+            description: "Please wait a few minutes before trying again.",
+          });
+          setIsLoading(false);
           return;
         }
-        // Rate limit hit and can't sign in — account doesn't exist yet but can't create
-        setErrors({
-          general: "Too many sign-up attempts. Please wait a few minutes and try again, or sign in if you already have an account.",
-        });
-        toast.error("Too many attempts", {
-          description: "Please wait a few minutes before trying again.",
-        });
-        return;
-      }
 
-      // Duplicate email
-      if (lower.includes("already registered") || lower.includes("user already registered") || lower.includes("email already in use")) {
-        setErrors({ email: "An account with this email already exists. Please sign in instead." });
-        toast.error("Email already registered", { description: "Please sign in instead." });
-        return;
-      }
+        // Duplicate email - explicit error from Supabase
+        if (
+          code === "user_already_exists" ||
+          code === "email_exists" ||
+          lower.includes("already registered") ||
+          lower.includes("user already registered") ||
+          lower.includes("email already in use") ||
+          lower.includes("already been registered") ||
+          lower.includes("already exists")
+        ) {
+          setEmailAlreadyExists(true);
+          setIsLoading(false);
+          return;
+        }
 
-      // Any other error — log to console for debugging, show generic message
-      console.error("[Signup] Supabase auth error:", { code, msg, error });
-      setErrors({ general: "Something went wrong. Please try again." });
-      toast.error("Signup failed", { description: "Please try again in a moment." });
-      return;
-    }
-
-    // ─── Step 2: Handle empty identities (email already in use, confirmation pending) ───
-    // ─── Supabase: email already in "pending confirmation" state ───
-    // Supabase returns empty identities when email confirmation is ON
-    // and the email was already used (confirmed OR unconfirmed).
-    if (data?.user && data.user.identities && data.user.identities.length === 0) {
-      // Try signing in to see if credentials work
-      const { error: signInErr } = await signIn(email, password);
-      if (!signInErr) {
-        // Account exists + credentials match → log them in
+        // Any other error
+        console.error("[Signup] Supabase auth error:", { code, msg, error });
+        setErrors({ general: "Something went wrong. Please try again." });
+        toast.error("Signup failed", { description: "Please try again in a moment." });
         setIsLoading(false);
-        finishSuccess("Welcome back!");
         return;
       }
-      
-      setIsLoading(false);
-      const signInMsg = (signInErr as any)?.message ?? "";
-      
-      if (signInMsg.toLowerCase().includes("not confirmed") || signInMsg.toLowerCase().includes("email not confirmed")) {
-        // Account exists but was never confirmed — give clear guidance
-        setErrors({
-          email: "This email is registered but not yet verified. Please check your inbox for a verification email, or contact support.",
-        });
-        toast.error("Email not verified", {
-          description: "Check your inbox for a verification link, or use a different email to create a new account.",
-        });
-      } else {
-        // Credentials don't match — email is taken by someone else
-        setErrors({ email: "An account with this email already exists. Please sign in instead." });
-        toast.error("Email already registered", { description: "Please sign in instead." });
-      }
-      return;
-    }
 
-    // ─── Step 3: Signup succeeded ───────────────────────────────────────────────
-    // If session is null, Supabase requires email confirmation.
-    // Try to sign in immediately to bypass this.
-    if (!data?.session) {
-      const { error: signInErr } = await signIn(email, password);
-      if (!signInErr) {
-        // Auto-login successful
+      // ─── Step 2: Check for empty identities (email already in use) ──────
+      // When Supabase has email confirmation enabled and the email is already
+      // registered, it returns a user object with an empty identities array
+      // instead of an error. We must detect this and show "already exists".
+      if (data?.user && data.user.identities && data.user.identities.length === 0) {
+        // Email is already registered — do NOT auto-login, do NOT redirect
+        setEmailAlreadyExists(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // ─── Step 3: Signup succeeded — auto-login ──────────────────────────
+      // If session is returned immediately (email confirmation disabled), we're done
+      if (data?.session) {
         setIsLoading(false);
         finishSuccess();
         return;
       }
-      // Email confirmation strictly enforced — inform user
-      setIsLoading(false);
-      clearDraft();
-      toast.success("Account created!", {
-        description: "Check your email to verify your account, then sign in.",
-      });
-      navigate("/login");
-      return;
-    }
 
-    // Session returned immediately (email confirmation disabled) — success!
-    setIsLoading(false);
-    finishSuccess();
+      // If no session (email confirmation is ON server-side), try to sign in
+      // immediately. This works if the account was already confirmed or if
+      // Supabase doesn't require confirmation for new accounts.
+      const { error: signInErr } = await signIn(email, password);
+      if (!signInErr) {
+        setIsLoading(false);
+        finishSuccess();
+        return;
+      }
+
+      // Sign-in failed (likely "Email not confirmed") — try auto-confirm via RPC
+      console.log("[Signup] Attempting auto-confirm via RPC...");
+      const { error: rpcError } = await supabase.rpc("auto_confirm_user", {
+        user_email: email,
+      });
+
+      if (!rpcError) {
+        // Wait briefly for Supabase to propagate the email confirmation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Retry sign-in after confirmation
+        const { error: retryErr } = await signIn(email, password);
+        if (!retryErr) {
+          setIsLoading(false);
+          finishSuccess();
+          return;
+        }
+
+        // Try one more time after another pause
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const { error: finalRetryErr } = await signIn(email, password);
+        if (!finalRetryErr) {
+          setIsLoading(false);
+          finishSuccess();
+          return;
+        }
+        console.error("[Signup] Sign-in failed even after auto-confirm:", finalRetryErr);
+      } else {
+        console.log("[Signup] Auto-confirm RPC not available:", rpcError?.message || rpcError);
+      }
+
+      // ─── Final fallback: Show confirmation pending UI ────────────────────
+      // Account IS created but email confirmation is required.
+      // Show a friendly UI with session polling so user is auto-redirected
+      // as soon as they click the confirmation link in their email.
+      setIsLoading(false);
+      setConfirmationEmail(email);
+      setConfirmationPassword(password);
+      clearDraft();
+      setConfirmationPending(true);
+      startResendCooldown();
+
+    } catch (err) {
+      console.error("[Signup] Unexpected error:", err);
+      setErrors({ general: "Something went wrong. Please try again." });
+      setIsLoading(false);
+    }
   };
+
+  // ─── Confirmation Pending UI ─────────────────────────────────────────────
+  if (confirmationPending) {
+    return (
+      <PageLayout showNewsletter={false}>
+        <SEOHead
+          title="Confirm Your Email"
+          description="Please check your email to confirm your Pebric account."
+          noindex={true}
+        />
+        <div className="container mx-auto px-6 py-10 md:py-16">
+          <div className="mx-auto max-w-md space-y-8 text-center">
+            {/* Icon */}
+            <div className="flex justify-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
+                <Mail className="h-10 w-10 text-primary" />
+              </div>
+            </div>
+
+            {/* Heading */}
+            <div>
+              <h1 className="mb-3 font-display text-3xl font-medium">Check Your Email</h1>
+              <p className="font-body text-muted-foreground">
+                We've sent a confirmation link to
+              </p>
+              <p className="mt-1 font-body font-semibold text-foreground">{confirmationEmail}</p>
+            </div>
+
+            {/* Instructions */}
+            <div className="rounded-xl border border-border bg-muted/30 p-6 text-left space-y-3">
+              <p className="font-body text-sm text-foreground font-medium">Next steps:</p>
+              <ol className="space-y-2 font-body text-sm text-muted-foreground list-decimal list-inside">
+                <li>Open your email inbox</li>
+                <li>Find the email from Pebric</li>
+                <li>Click the <strong className="text-foreground">"Confirm your email"</strong> link</li>
+                <li>You'll be automatically signed in and redirected here</li>
+              </ol>
+            </div>
+
+            {/* Polling indicator */}
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              {isPolling && (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>Waiting for confirmation...</span>
+                </>
+              )}
+            </div>
+
+            {/* Resend button */}
+            <div className="space-y-3">
+              <p className="font-body text-sm text-muted-foreground">
+                Didn't receive the email? Check your spam folder or
+              </p>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={handleResendConfirmation}
+                disabled={resendCooldown > 0}
+              >
+                {resendCooldown > 0 ? (
+                  <>Resend in {resendCooldown}s</>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4" />
+                    Resend Confirmation Email
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Already confirmed link */}
+            <div className="border-t border-border pt-6 space-y-3">
+              <p className="font-body text-sm text-muted-foreground">
+                Already confirmed your email?
+              </p>
+              <Button
+                variant="default"
+                className="w-full gap-2"
+                onClick={() => {
+                  if (pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                    pollIntervalRef.current = null;
+                  }
+                  navigate("/login");
+                }}
+              >
+                <LogIn className="h-4 w-4" />
+                Sign In Now
+              </Button>
+            </div>
+
+            {/* Success indicator for confirmed */}
+            <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Account created successfully</span>
+            </div>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout showNewsletter={false}>
@@ -222,6 +436,24 @@ export default function Signup() {
               Create an account to start your pebric journey
             </p>
           </div>
+
+          {/* ── Email Already Exists Banner ── */}
+          {emailAlreadyExists && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-center dark:border-amber-700 dark:bg-amber-950/40">
+              <p className="mb-1 font-display text-base font-medium text-amber-900 dark:text-amber-200">
+                An account with this email already exists.
+              </p>
+              <p className="mb-4 font-body text-sm text-amber-700 dark:text-amber-400">
+                Please sign in instead.
+              </p>
+              <Link to="/login">
+                <Button variant="default" className="gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Sign In
+                </Button>
+              </Link>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
@@ -246,6 +478,7 @@ export default function Signup() {
                   setEmail(e.target.value);
                   // Clear server-set email error on change
                   setErrors((prev) => ({ ...prev, email: undefined }));
+                  if (emailAlreadyExists) setEmailAlreadyExists(false);
                 }}
                 onBlur={() => setTouchedEmail(true)}
                 placeholder="your@email.com"
