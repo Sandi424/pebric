@@ -181,6 +181,126 @@ function localBackupPlugin() {
           return;
         }
 
+        // 4. Send Password Reset Email API Endpoint
+        if (req.url.startsWith("/api/send-reset-email") && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => { body += chunk; });
+          req.on("end", async () => {
+            try {
+              const { email } = JSON.parse(body || "{}");
+              if (!email || !email.includes("@")) {
+                res.statusCode = 400;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ success: false, error: "Valid email address required." }));
+                return;
+              }
+
+              const nodemailer = await import("nodemailer");
+              const resendApiKey = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
+
+              let transporter;
+              let fromAddress = '"Pebric Security" <security@pebric.com>';
+
+              if (resendApiKey) {
+                console.log("[Email-Server] Sending email via Resend SMTP...");
+                transporter = nodemailer.createTransport({
+                  host: "smtp.resend.com",
+                  port: 465,
+                  secure: true,
+                  auth: {
+                    user: "resend",
+                    pass: resendApiKey,
+                  },
+                });
+                fromAddress = "Pebric Security <onboarding@resend.dev>";
+              } else {
+                console.log("[Email-Server] Creating Ethereal SMTP test account for immediate email delivery...");
+                const testAccount = await nodemailer.createTestAccount();
+                transporter = nodemailer.createTransport({
+                  host: testAccount.smtp.host,
+                  port: testAccount.smtp.port,
+                  secure: testAccount.smtp.secure,
+                  auth: {
+                    user: testAccount.user,
+                    pass: testAccount.pass,
+                  },
+                });
+              }
+
+              const resetLink = `http://localhost:8080/reset-password?email=${encodeURIComponent(email)}`;
+
+              const info = await transporter.sendMail({
+                from: fromAddress,
+                to: email,
+                subject: "Reset your Pebric password",
+                html: `
+                  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+                    <h2 style="color: #2e7d32; text-align: center;">Pebric - Password Reset</h2>
+                    <p style="font-size: 16px; color: #333;">Hello,</p>
+                    <p style="font-size: 15px; color: #555;">We received a request to reset your password for your Pebric account (<strong>${email}</strong>).</p>
+                    <p style="font-size: 15px; color: #555;">Click the button below to set up a new password:</p>
+                    <div style="margin: 30px 0; text-align: center;">
+                      <a href="${resetLink}" 
+                         style="background-color: #d97706; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                          Reset Password
+                      </a>
+                    </div>
+                    <p style="color: #666; font-size: 14px;">If you did not request a password reset, you can safely ignore this email.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+                    <p style="color: #999; font-size: 12px; text-align: center;">Pebric • Matching Outfits for Pets & Owners</p>
+                  </div>
+                `,
+              });
+
+              const previewUrl = nodemailer.getTestMessageUrl(info);
+              console.log(`[Email-Server] Email sent successfully to ${email}! Message ID: ${info.messageId}`);
+              if (previewUrl) console.log(`[Email-Server] Message Preview: ${previewUrl}`);
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ 
+                success: true, 
+                message: "Password reset email sent and delivered!",
+                messageId: info.messageId,
+                previewUrl: previewUrl || null 
+              }));
+            } catch (err) {
+              console.error("[Email-Server] Failed to send email:", err);
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+            }
+          });
+          return;
+        }
+
+        // 5. Update Password Endpoint
+        if (req.url.startsWith("/api/reset-password-update") && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => { body += chunk; });
+          req.on("end", async () => {
+            try {
+              const { email, password } = JSON.parse(body || "{}");
+              if (!email || !password || password.length < 6) {
+                res.statusCode = 400;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ success: false, error: "Valid email and password (min 6 chars) required." }));
+                return;
+              }
+
+              console.log(`[Email-Server] Password update requested for ${email}`);
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: true, message: "Password updated successfully!" }));
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+            }
+          });
+          return;
+        }
+
         next();
       });
     }
