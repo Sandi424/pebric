@@ -285,6 +285,8 @@ function AddressFields({
             value={values.city}
             onChange={onChange}
             required={required}
+            readOnly={status === "valid" || (values.postalCode.length === 6 && !!values.city)}
+            className={(status === "valid" || (values.postalCode.length === 6 && !!values.city)) ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
             placeholder={isLookingUp ? "Fetching..." : ""}
           />
         </div>
@@ -296,6 +298,8 @@ function AddressFields({
             value={values.state}
             onChange={onChange}
             required={required}
+            readOnly={status === "valid" || (values.postalCode.length === 6 && !!values.state)}
+            className={(status === "valid" || (values.postalCode.length === 6 && !!values.state)) ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
             placeholder={isLookingUp ? "Fetching..." : ""}
           />
         </div>
@@ -468,7 +472,11 @@ export default function Checkout() {
     total,
   } = useOrderTotal(activeTotal, couponDiscount, giftWrapCost, codFee);
 
-  const handleApplyCoupon = async () => {
+  const handleApplyCoupon = async (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!couponCode.trim()) return;
 
     setIsValidating(true);
@@ -1225,13 +1233,20 @@ export default function Checkout() {
                         onChange={(e) =>
                           setCouponCode(e.target.value.toUpperCase())
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleApplyCoupon(e);
+                          }
+                        }}
                         placeholder="Enter code"
                         className="flex-1"
                       />
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={handleApplyCoupon}
+                        onClick={(e) => handleApplyCoupon(e)}
                         disabled={isValidating || !couponCode.trim()}
                       >
                         {isValidating ? "..." : "Apply"}

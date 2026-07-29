@@ -92,62 +92,79 @@ export class CartService {
   async addItem(item: Omit<CartItemData, 'quantity'>): Promise<void> {
     if (!this.userId) return;
 
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(item.id));
+    if (!isUUID) {
+      console.warn("Product ID is not a valid UUID, skipping DB cart sync:", item.id);
+      return;
+    }
+
     const ownerSize = CartItemModel.normalizeSize(item.ownerSize);
     const petSize = CartItemModel.normalizeSize(item.petSize);
 
-    // Fetch existing rows for this product
-    const { data: existingRows, error: fetchError } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', this.userId)
-      .eq('product_id', item.id);
-
-    if (fetchError) throw fetchError;
-
-    // Find matching row
-    const matchedRow = existingRows?.find(row => {
-      const parsedOwner = CartItemModel.deserializeSize(row.size);
-      const parsedPet = CartItemModel.deserializeSize(row.pet_size);
-      return parsedOwner.size === ownerSize && parsedPet.size === petSize;
-    });
-
-    if (matchedRow) {
-      const parsedOwner = CartItemModel.deserializeSize(matchedRow.size);
-      const parsedPet = CartItemModel.deserializeSize(matchedRow.pet_size);
-
-      const newOwnerQty = parsedOwner.quantity + item.ownerQuantity;
-      const newPetQty = parsedPet.quantity + item.petQuantity;
-      const newQuantity = newOwnerQty + newPetQty;
-
-      const serializedOwner = CartItemModel.serializeSize(ownerSize, newOwnerQty);
-      const serializedPet = CartItemModel.serializeSize(petSize, newPetQty);
-
-      const { error: updateError } = await supabase
+    try {
+      // Fetch existing rows for this product
+      const { data: existingRows, error: fetchError } = await supabase
         .from('cart_items')
-        .update({
-          size: serializedOwner,
-          pet_size: serializedPet,
-          quantity: newQuantity
-        })
-        .eq('id', matchedRow.id);
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('product_id', item.id);
 
-      if (updateError) throw updateError;
-    } else {
-      const serializedOwner = CartItemModel.serializeSize(ownerSize, item.ownerQuantity);
-      const serializedPet = CartItemModel.serializeSize(petSize, item.petQuantity);
-      const combinedQuantity = item.ownerQuantity + item.petQuantity;
+      if (fetchError) {
+        console.warn('Cart items fetch notice:', fetchError.message);
+        return;
+      }
 
-      const { error: insertError } = await supabase
-        .from('cart_items')
-        .insert({
-          user_id: this.userId,
-          product_id: item.id as string,
-          size: serializedOwner,
-          pet_size: serializedPet,
-          quantity: combinedQuantity
-        });
+      // Find matching row
+      const matchedRow = existingRows?.find(row => {
+        const parsedOwner = CartItemModel.deserializeSize(row.size);
+        const parsedPet = CartItemModel.deserializeSize(row.pet_size);
+        return parsedOwner.size === ownerSize && parsedPet.size === petSize;
+      });
 
-      if (insertError) throw insertError;
+      if (matchedRow) {
+        const parsedOwner = CartItemModel.deserializeSize(matchedRow.size);
+        const parsedPet = CartItemModel.deserializeSize(matchedRow.pet_size);
+
+        const newOwnerQty = parsedOwner.quantity + item.ownerQuantity;
+        const newPetQty = parsedPet.quantity + item.petQuantity;
+        const newQuantity = newOwnerQty + newPetQty;
+
+        const serializedOwner = CartItemModel.serializeSize(ownerSize, newOwnerQty);
+        const serializedPet = CartItemModel.serializeSize(petSize, newPetQty);
+
+        const { error: updateError } = await supabase
+          .from('cart_items')
+          .update({
+            size: serializedOwner,
+            pet_size: serializedPet,
+            quantity: newQuantity
+          })
+          .eq('id', matchedRow.id);
+
+        if (updateError) {
+          console.warn('Cart items update notice:', updateError.message);
+        }
+      } else {
+        const serializedOwner = CartItemModel.serializeSize(ownerSize, item.ownerQuantity);
+        const serializedPet = CartItemModel.serializeSize(petSize, item.petQuantity);
+        const combinedQuantity = item.ownerQuantity + item.petQuantity;
+
+        const { error: insertError } = await supabase
+          .from('cart_items')
+          .insert({
+            user_id: this.userId,
+            product_id: item.id as string,
+            size: serializedOwner,
+            pet_size: serializedPet,
+            quantity: combinedQuantity
+          });
+
+        if (insertError) {
+          console.warn('Cart items insert notice:', insertError.message);
+        }
+      }
+    } catch (err) {
+      console.warn('Cart sync notice:', err);
     }
   }
 
@@ -156,6 +173,9 @@ export class CartService {
    */
   async removeItem(productId: string | number, ownerSize: string, petSize: string): Promise<void> {
     if (!this.userId) return;
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(productId));
+    if (!isUUID) return;
 
     const normalizedOwnerSize = CartItemModel.normalizeSize(ownerSize);
     const normalizedPetSize = CartItemModel.normalizeSize(petSize);
@@ -195,6 +215,9 @@ export class CartService {
     petQuantity: number
   ): Promise<void> {
     if (!this.userId) return;
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(productId));
+    if (!isUUID) return;
 
     if (ownerQuantity < 1 && petQuantity < 1) {
       await this.removeItem(productId, ownerSize, petSize);

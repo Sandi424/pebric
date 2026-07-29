@@ -64,7 +64,7 @@ export default function ForgotPassword() {
                 const apiRes = await fetch("/api/send-reset-email", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: cleanEmail }),
+                    body: JSON.stringify({ email: cleanEmail, origin: window.location.origin }),
                 });
 
                 const apiData = await apiRes.json();

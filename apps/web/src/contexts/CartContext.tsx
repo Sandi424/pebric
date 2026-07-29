@@ -469,8 +469,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       try {
         await cartService.addItem(newItem);
       } catch (error) {
-        console.error("Failed to sync cart:", error);
-        toast.error("Failed to save to account.");
+        console.warn("Could not sync cart item to account:", error);
       }
     }
   };

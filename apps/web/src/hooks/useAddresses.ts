@@ -44,37 +44,67 @@ export function useAddresses() {
   const addAddress = async (address: Omit<AddressInsert, "user_id">) => {
     if (!user) return null;
 
-    // If this is the first address, make it default automatically
     const isFirst = addresses.length === 0;
     const isDefault = address.is_default !== undefined ? address.is_default : isFirst;
 
-    // If setting as default, we need to unset others first
-    if (isDefault) {
-      await supabase
+    let createdData: SavedAddress | null = null;
+    try {
+      if (isDefault) {
+        await supabase
+          .from("saved_addresses")
+          .update({ is_default: false })
+          .eq("user_id", user.id)
+          .eq("is_default", true);
+      }
+
+      const { data, error } = await supabase
         .from("saved_addresses")
-        .update({ is_default: false })
-        .eq("user_id", user.id)
-        .eq("is_default", true);
+        .insert({
+          ...address,
+          user_id: user.id,
+          is_default: isDefault,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        createdData = data as SavedAddress;
+      }
+    } catch (e) {
+      console.warn("Error adding address to DB table, using metadata fallback:", e);
     }
 
-    const { data, error } = await supabase
-      .from("saved_addresses")
-      .insert({
-        ...address,
-        user_id: user.id,
-        is_default: isDefault,
-      })
-      .select()
-      .single();
+    const newAddr: SavedAddress = createdData || {
+      id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      user_id: user.id,
+      label: address.label || "Home",
+      full_name: address.full_name || "",
+      phone: address.phone || null,
+      address_line1: address.address_line1 || "",
+      address_line2: address.address_line2 || null,
+      city: address.city || "",
+      state: address.state || null,
+      postal_code: address.postal_code || "",
+      country: address.country || "India",
+      is_default: isDefault,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-    if (error) {
-      console.error("Error adding address:", error);
-      toast.error("Failed to add address");
-      return null;
-    }
+    const existingMeta = user.user_metadata?.saved_addresses || [];
+    const updatedMeta = isDefault
+      ? existingMeta.map((a: any) => ({ ...a, is_default: false }))
+      : existingMeta;
+
+    await supabase.auth.updateUser({
+      data: {
+        saved_addresses: [...updatedMeta, newAddr],
+      },
+    });
 
     await fetchAddresses();
-    return data;
+    toast.success("Address saved!");
+    return newAddr;
   };
 
   const updateAddress = async (id: string, updates: AddressUpdate) => {

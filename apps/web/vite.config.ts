@@ -187,7 +187,7 @@ function localBackupPlugin() {
           req.on("data", (chunk) => { body += chunk; });
           req.on("end", async () => {
             try {
-              const { email } = JSON.parse(body || "{}");
+              const { email, origin } = JSON.parse(body || "{}");
               if (!email || !email.includes("@")) {
                 res.statusCode = 400;
                 res.setHeader("Content-Type", "application/json");
@@ -227,7 +227,8 @@ function localBackupPlugin() {
                 });
               }
 
-              const resetLink = `http://localhost:8080/reset-password?email=${encodeURIComponent(email)}`;
+              const baseUrl = origin || "http://localhost:8080";
+              const resetLink = `${baseUrl}/reset-password?email=${encodeURIComponent(email)}`;
 
               const info = await transporter.sendMail({
                 from: fromAddress,

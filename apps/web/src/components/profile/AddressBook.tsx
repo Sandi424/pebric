@@ -149,9 +149,9 @@ function AddressFormContent({
   const handlePincodeChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const pin = e.target.value.trim();
-      onChange({ ...address, postal_code: pin });
       resetStatus();
       if (pin.length === 6 && POSTAL_CODE_RE.test(pin)) {
+        onChange({ ...address, postal_code: pin });
         const result = await fetchPincode(pin);
         if (result) {
           onChange({
@@ -162,6 +162,8 @@ function AddressFormContent({
             country: result.country,
           });
         }
+      } else {
+        onChange({ ...address, postal_code: pin, city: "", state: "" });
       }
     },
     [address, onChange, fetchPincode, resetStatus]
@@ -263,7 +265,14 @@ function AddressFormContent({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="city">City <span className="text-destructive">*</span></Label>
-          <Input id="city" value={address.city} onChange={(e) => onChange({ ...address, city: e.target.value })} required />
+          <Input 
+            id="city" 
+            value={address.city} 
+            onChange={(e) => onChange({ ...address, city: e.target.value })} 
+            required 
+            readOnly={status === "valid" || (address.postal_code.length === 6 && !!address.city)}
+            className={(status === "valid" || (address.postal_code.length === 6 && !!address.city)) ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="state">State <span className="text-destructive">*</span></Label>
@@ -272,6 +281,8 @@ function AddressFormContent({
             value={address.state || ""} 
             onChange={(e) => onChange({ ...address, state: e.target.value })} 
             required 
+            readOnly={status === "valid" || (address.postal_code.length === 6 && !!address.state)}
+            className={(status === "valid" || (address.postal_code.length === 6 && !!address.state)) ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
             placeholder={status === "loading" ? "Fetching..." : ""}
           />
         </div>
@@ -290,7 +301,25 @@ function AddressFormContent({
 
       <div className="pt-4 pb-2 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
-        <Button type="submit" disabled={isSaving || status === "invalid" || phoneInvalid} className="w-full sm:w-auto">
+        <Button 
+          type="submit" 
+          disabled={
+            isSaving || 
+            status === "invalid" || 
+            status === "loading" ||
+            phoneInvalid || 
+            !address.label?.trim() ||
+            !address.full_name?.trim() ||
+            !address.phone?.trim() ||
+            !address.address_line1?.trim() ||
+            !address.postal_code?.trim() ||
+            address.postal_code.length !== 6 ||
+            !POSTAL_CODE_RE.test(address.postal_code) ||
+            !address.city?.trim() ||
+            !address.state?.trim()
+          } 
+          className="w-full sm:w-auto"
+        >
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Address
         </Button>

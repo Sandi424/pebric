@@ -32,15 +32,51 @@ export function usePets() {
     queryKey: ["pets", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from("pets")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("is_primary", { ascending: false })
-        .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      return data as Pet[];
+      let dbPets: Pet[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("pets")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("is_primary", { ascending: false })
+          .order("created_at", { ascending: false });
+
+        if (!error && data) {
+          dbPets = data as Pet[];
+        }
+      } catch (err) {
+        console.warn("Could not load pets from table:", err);
+      }
+
+      const metaPets: Pet[] = (user.user_metadata?.pets || []).map((pet: any) => ({
+        id: pet.id || `pet-${Date.now()}-${Math.random()}`,
+        user_id: user.id,
+        name: pet.name || "My Pet",
+        species: pet.species || "dog",
+        breed: pet.breed || null,
+        birth_date: pet.birth_date || null,
+        weight_kg: pet.weight_kg !== undefined ? Number(pet.weight_kg) : null,
+        height_cm: pet.height_cm !== undefined ? Number(pet.height_cm) : null,
+        neck_cm: pet.neck_cm !== undefined ? Number(pet.neck_cm) : null,
+        chest_cm: pet.chest_cm !== undefined ? Number(pet.chest_cm) : null,
+        length_cm: pet.length_cm !== undefined ? Number(pet.length_cm) : null,
+        photo_url: pet.photo_url || null,
+        notes: pet.notes || null,
+        is_primary: !!pet.is_primary,
+        created_at: pet.created_at || new Date().toISOString(),
+        updated_at: pet.updated_at || new Date().toISOString(),
+      }));
+
+      const combinedMap = new Map<string, Pet>();
+      dbPets.forEach((p) => combinedMap.set(p.id, p));
+      metaPets.forEach((p) => {
+        if (!combinedMap.has(p.id)) {
+          combinedMap.set(p.id, p);
+        }
+      });
+
+      return Array.from(combinedMap.values());
     },
     enabled: !!user,
   });
@@ -48,10 +84,15 @@ export function usePets() {
 
 export function usePet(id: string) {
   const { user } = useAuth();
+  const { data: pets } = usePets();
 
   return useQuery({
     queryKey: ["pet", id],
     queryFn: async () => {
+      if (pets) {
+        const found = pets.find((p) => p.id === id);
+        if (found) return found;
+      }
       const { data, error } = await supabase
         .from("pets")
         .select("*")
@@ -73,14 +114,52 @@ export function useAddPet() {
     mutationFn: async (pet: Omit<PetInsert, "user_id">) => {
       if (!user) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase
-        .from("pets")
-        .insert({ ...pet, user_id: user.id })
-        .select()
-        .single();
+      let createdPet: Pet | null = null;
+      try {
+        const { data, error } = await supabase
+          .from("pets")
+          .insert({ ...pet, user_id: user.id })
+          .select()
+          .single();
 
-      if (error) throw error;
-      return data;
+        if (!error && data) {
+          createdPet = data as Pet;
+        }
+      } catch (e) {
+        console.warn("DB insert pet failed, using metadata fallback:", e);
+      }
+
+      const newPet: Pet = createdPet || {
+        id: `pet-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        user_id: user.id,
+        name: pet.name,
+        species: pet.species,
+        breed: pet.breed || null,
+        birth_date: pet.birth_date || null,
+        weight_kg: pet.weight_kg !== undefined ? Number(pet.weight_kg) : null,
+        height_cm: pet.height_cm !== undefined ? Number(pet.height_cm) : null,
+        neck_cm: pet.neck_cm !== undefined ? Number(pet.neck_cm) : null,
+        chest_cm: pet.chest_cm !== undefined ? Number(pet.chest_cm) : null,
+        length_cm: pet.length_cm !== undefined ? Number(pet.length_cm) : null,
+        photo_url: pet.photo_url || null,
+        notes: pet.notes || null,
+        is_primary: !!pet.is_primary,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const existingMeta = user.user_metadata?.pets || [];
+      const updatedMeta = pet.is_primary
+        ? existingMeta.map((p: any) => ({ ...p, is_primary: false }))
+        : existingMeta;
+
+      await supabase.auth.updateUser({
+        data: {
+          pets: [...updatedMeta, newPet],
+        },
+      });
+
+      return newPet;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets"] });
@@ -94,18 +173,34 @@ export function useAddPet() {
 
 export function useUpdatePet() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: PetUpdate & { id: string }) => {
-      const { data, error } = await supabase
-        .from("pets")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
+      try {
+        await supabase
+          .from("pets")
+          .update(updates)
+          .eq("id", id);
+      } catch (e) {
+        console.warn("DB update pet failed, using metadata fallback:", e);
+      }
 
-      if (error) throw error;
-      return data;
+      if (user) {
+        const existingMeta = user.user_metadata?.pets || [];
+        const updatedMeta = existingMeta.map((p: any) => {
+          if (p.id === id) {
+            return { ...p, ...updates, updated_at: new Date().toISOString() };
+          }
+          return updates.is_primary ? { ...p, is_primary: false } : p;
+        });
+
+        await supabase.auth.updateUser({
+          data: {
+            pets: updatedMeta,
+          },
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets"] });
@@ -119,11 +214,25 @@ export function useUpdatePet() {
 
 export function useDeletePet() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("pets").delete().eq("id", id);
-      if (error) throw error;
+      try {
+        await supabase.from("pets").delete().eq("id", id);
+      } catch (e) {
+        console.warn("DB delete pet failed:", e);
+      }
+
+      if (user) {
+        const existingMeta = user.user_metadata?.pets || [];
+        const updatedMeta = existingMeta.filter((p: any) => p.id !== id);
+        await supabase.auth.updateUser({
+          data: {
+            pets: updatedMeta,
+          },
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets"] });
@@ -143,19 +252,31 @@ export function useSetPrimaryPet() {
     mutationFn: async (petId: string) => {
       if (!user) throw new Error("Not authenticated");
 
-      // First, unset all primary flags
-      await supabase
-        .from("pets")
-        .update({ is_primary: false })
-        .eq("user_id", user.id);
+      try {
+        await supabase
+          .from("pets")
+          .update({ is_primary: false })
+          .eq("user_id", user.id);
 
-      // Then set the new primary
-      const { error } = await supabase
-        .from("pets")
-        .update({ is_primary: true })
-        .eq("id", petId);
+        await supabase
+          .from("pets")
+          .update({ is_primary: true })
+          .eq("id", petId);
+      } catch (e) {
+        console.warn("DB set primary pet failed:", e);
+      }
 
-      if (error) throw error;
+      const existingMeta = user.user_metadata?.pets || [];
+      const updatedMeta = existingMeta.map((p: any) => ({
+        ...p,
+        is_primary: p.id === petId,
+      }));
+
+      await supabase.auth.updateUser({
+        data: {
+          pets: updatedMeta,
+        },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets"] });
