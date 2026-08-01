@@ -29,6 +29,7 @@ import {
 import { useOrderTotal } from "@/hooks/useOrderTotal";
 import { usePaytm, PaytmPaymentResponse } from "@/hooks/usePaytm";
 import { usePhonePe } from "@/hooks/usePhonePe";
+import { useRazorpay, RazorpayPaymentResponse } from "@/hooks/useRazorpay";
 import { toast } from "sonner";
 import { SEOHead } from "@/components/SEOHead";
 import { usePincodeLookup } from "@/hooks/usePincodeLookup";
@@ -452,6 +453,10 @@ export default function Checkout() {
     verifyPayment: verifyPhonePePayment,
     isLoading: isPhonePeLoading,
   } = usePhonePe();
+  const {
+    openCheckout: openRazorpayCheckout,
+    isLoading: isRazorpayLoading,
+  } = useRazorpay();
 
   // Payment method state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("phonepe");
@@ -837,37 +842,41 @@ export default function Checkout() {
       return;
     }
 
-    // PhonePe payment flow
-    if (paymentMethod === "phonepe") {
+    // Online Pay (Razorpay) flow — no server-side edge function needed
+    if (paymentMethod === "phonepe" || paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "netbanking") {
       const checkoutAttemptId = createCheckoutAttemptId();
 
-      // Save a full checkout snapshot to sessionStorage BEFORE we navigate away.
-      // When PhonePe redirects back, the cart context will be empty (async reload not done yet),
-      // so we read this snapshot to reconstruct the order.
-      const checkoutSnapshot: CheckoutSnapshot = {
-        items: checkoutItems,
-        formData,
-        billingData,
-        sameAsShipping,
-        coupon: appliedCoupon
-          ? { id: appliedCoupon.id, code: appliedCoupon.code }
-          : null,
-        giftWrap,
-        giftMessage,
-        buyNowItems: buyNowItems || null,
-        idempotencyKey: checkoutAttemptId,
-      };
-      sessionStorage.setItem(
-        "phonepe_checkout_snapshot",
-        JSON.stringify(checkoutSnapshot),
-      );
-
-      openPhonePeCheckout({
+      openRazorpayCheckout({
         amount: total,
         customerEmail: formData.email,
         customerPhone: formData.phone,
-        customerId: user.id || undefined,
-        redirectUrl: `${window.location.origin}/checkout?phonepe_callback=true`,
+        customerName: formData.fullName,
+        onSuccess: async (response: RazorpayPaymentResponse) => {
+          try {
+            const transactionId = response.razorpay_payment_id;
+
+            await finalizeOrder({
+              transactionId,
+              paymentMethod: "upi",
+              paymentStatus: "completed",
+              idempotencyKey: checkoutAttemptId,
+            });
+
+            toast.success("Payment successful! Order placed.", {
+              description: transactionId
+                ? `Transaction ID: ${transactionId}`
+                : "Paid online",
+            });
+            navigate("/orders");
+          } catch (error) {
+            toast.error("Failed to save order after payment", {
+              description:
+                "Payment was successful. Please contact support with your transaction ID.",
+            });
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
         onFailure: (error: string) => {
           toast.error("Payment failed", {
             description: error,
@@ -878,7 +887,7 @@ export default function Checkout() {
       return;
     }
 
-    // Online payment flow — Paytm checkout
+    // Fallback Paytm checkout (if somehow another payment method is selected)
     const checkoutAttemptId = createCheckoutAttemptId();
     openPaytmCheckout({
       amount: total,

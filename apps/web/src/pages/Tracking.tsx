@@ -58,8 +58,7 @@ export default function Tracking() {
       return;
     }
 
-    // Fallback: search ALL user orders in DB using separate queries
-    // (avoid .or() which misparses special chars like dashes in order numbers)
+    // Fallback: search ALL user orders in DB (all statuses including pending and delivered)
     if (user) {
       try {
         // Try matching by order_number first
@@ -86,6 +85,20 @@ export default function Tracking() {
 
         if (byTracking) {
           setSelectedOrderId(byTracking.id);
+          setTrackingInput("");
+          return;
+        }
+
+        // Also try case-insensitive search using ilike for the order number
+        const { data: byIlike } = await supabase
+          .from("orders")
+          .select("id, order_number, status")
+          .eq("user_id", user.id)
+          .ilike("order_number", input)
+          .maybeSingle();
+
+        if (byIlike) {
+          setSelectedOrderId(byIlike.id);
           setTrackingInput("");
           return;
         }
