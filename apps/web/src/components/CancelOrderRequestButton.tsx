@@ -25,6 +25,14 @@ interface CancelOrderRequestButtonProps {
   status: OrderStatus;
 }
 
+// UUID v4 pattern — orders saved via the RPC have real UUIDs;
+// fallback orders use a `ord-timestamp-random` string format.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
 export function CancelOrderRequestButton({ orderId, orderNumber, status }: CancelOrderRequestButtonProps) {
   const { user } = useAuth();
   const createTicket = useCreateTicket();
@@ -45,31 +53,67 @@ export function CancelOrderRequestButton({ orderId, orderNumber, status }: Cance
 
     try {
       const subject = `Cancellation request: ${orderNumber}`;
+      const orderIdIsUUID = isValidUUID(orderId);
 
-      const { data: existing, error: existingError } = await supabase
-        .from("support_tickets")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("order_id", orderId)
-        .eq("subject", subject)
-        .maybeSingle();
+      // Only check for existing ticket using order_id if the ID is a valid UUID.
+      // Passing a non-UUID value to a UUID column causes a Postgres type error.
+      if (orderIdIsUUID) {
+        let existingTicket = null;
+        try {
+          const { data: existing, error: existingError } = await supabase
+            .from("support_tickets")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("order_id", orderId)
+            .eq("subject", subject)
+            .maybeSingle();
 
-      if (existingError) throw existingError;
-      if (existing) {
-        toast.info("Cancellation already requested", { description: "Our team will review it shortly." });
-        setRequested(true);
-        return;
+          if (existingError) {
+            // Log but don't block — we'll just let the insert proceed
+            console.warn("Duplicate check error:", existingError.message);
+          } else {
+            existingTicket = existing;
+          }
+        } catch (checkErr) {
+          console.warn("Duplicate check threw:", checkErr);
+        }
+
+        if (existingTicket) {
+          toast.info("Cancellation already requested", { description: "Our team will review it shortly." });
+          setRequested(true);
+          return;
+        }
+      } else {
+        // For fallback (non-UUID) order IDs, check by subject + user only
+        try {
+          const { data: existing } = await supabase
+            .from("support_tickets")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("subject", subject)
+            .maybeSingle();
+
+          if (existing) {
+            toast.info("Cancellation already requested", { description: "Our team will review it shortly." });
+            setRequested(true);
+            return;
+          }
+        } catch (checkErr) {
+          console.warn("Duplicate check threw:", checkErr);
+        }
       }
 
       await createTicket.mutateAsync({
         subject,
         message: `Please cancel my order ${orderNumber}. Current status: ${status}.`,
-        orderId,
+        // Only pass orderId if it's a valid UUID (FK constraint requires it)
+        orderId: orderIdIsUUID ? orderId : undefined,
         priority: "high",
       });
 
       setRequested(true);
     } catch (e) {
+      console.error("Cancellation request error:", e);
       toast.error("Failed to request cancellation");
     }
   };
@@ -100,4 +144,3 @@ export function CancelOrderRequestButton({ orderId, orderNumber, status }: Cance
     </AlertDialog>
   );
 }
-

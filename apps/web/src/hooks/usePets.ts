@@ -33,6 +33,10 @@ export function usePets() {
     queryFn: async () => {
       if (!user) return [];
 
+      // Always fetch fresh user data to get the latest user_metadata after mutations
+      const { data: freshUserData } = await supabase.auth.getUser();
+      const freshUser = freshUserData?.user || user;
+
       let dbPets: Pet[] = [];
       try {
         const { data, error } = await supabase
@@ -49,9 +53,9 @@ export function usePets() {
         console.warn("Could not load pets from table:", err);
       }
 
-      const metaPets: Pet[] = (user.user_metadata?.pets || []).map((pet: any) => ({
+      const metaPets: Pet[] = (freshUser.user_metadata?.pets || []).map((pet: any) => ({
         id: pet.id || `pet-${Date.now()}-${Math.random()}`,
-        user_id: user.id,
+        user_id: freshUser.id,
         name: pet.name || "My Pet",
         species: pet.species || "dog",
         breed: pet.breed || null,

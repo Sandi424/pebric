@@ -29,6 +29,10 @@ export function useSavedAddresses() {
     queryKey: ["saved-addresses", user?.id],
     queryFn: async () => {
       if (!user) return [];
+
+      // Always fetch fresh user data to get the latest user_metadata after mutations
+      const { data: freshUserData } = await supabase.auth.getUser();
+      const freshUser = freshUserData?.user || user;
       
       let dbAddresses: SavedAddress[] = [];
       try {
@@ -46,9 +50,9 @@ export function useSavedAddresses() {
         console.warn("Could not load addresses from table:", err);
       }
 
-      const metaAddresses: SavedAddress[] = (user.user_metadata?.saved_addresses || []).map((addr: any) => ({
+      const metaAddresses: SavedAddress[] = (freshUser.user_metadata?.saved_addresses || []).map((addr: any) => ({
         id: addr.id || `meta-${Date.now()}-${Math.random()}`,
-        user_id: user.id,
+        user_id: freshUser.id,
         label: addr.label || "Home",
         full_name: addr.full_name || "",
         phone: addr.phone || null,

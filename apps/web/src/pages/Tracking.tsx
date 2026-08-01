@@ -6,6 +6,8 @@ import { useOrdersWithTracking, useShipmentTracking } from "@/hooks/useShipmentT
 import { Package, Truck, CheckCircle, MapPin, Clock, Search, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SEOHead } from "@/components/SEOHead";
+import { supabase } from "@/integrations/client";
+import { toast } from "sonner";
 
 const statusSteps = [
   { key: "confirmed", label: "Order Confirmed", icon: CheckCircle },
@@ -42,14 +44,59 @@ export default function Tracking() {
     }
   }, [selectedOrderId, setSearchParams]);
 
-  const handleTrackOrder = () => {
+  const handleTrackOrder = async () => {
+    const input = trackingInput.trim();
+    if (!input) return;
+
+    // First try the pre-loaded active shipments list (fast path)
     const order = orders.find(
-      (o) => o.order_number === trackingInput || o.tracking_number === trackingInput
+      (o) => o.order_number === input || o.tracking_number === input
     );
     if (order) {
       setSelectedOrderId(order.id);
       setTrackingInput("");
+      return;
     }
+
+    // Fallback: search ALL user orders in DB using separate queries
+    // (avoid .or() which misparses special chars like dashes in order numbers)
+    if (user) {
+      try {
+        // Try matching by order_number first
+        const { data: byOrderNum } = await supabase
+          .from("orders")
+          .select("id, order_number, status")
+          .eq("user_id", user.id)
+          .eq("order_number", input)
+          .maybeSingle();
+
+        if (byOrderNum) {
+          setSelectedOrderId(byOrderNum.id);
+          setTrackingInput("");
+          return;
+        }
+
+        // Try matching by tracking_number
+        const { data: byTracking } = await supabase
+          .from("orders")
+          .select("id, order_number, status")
+          .eq("user_id", user.id)
+          .eq("tracking_number", input)
+          .maybeSingle();
+
+        if (byTracking) {
+          setSelectedOrderId(byTracking.id);
+          setTrackingInput("");
+          return;
+        }
+      } catch (err) {
+        console.warn("Order lookup fallback failed:", err);
+      }
+    }
+
+    toast.error("Order not found", {
+      description: "Please check the order number and try again.",
+    });
   };
 
   const getStatusIndex = (status: string) => {

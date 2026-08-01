@@ -298,28 +298,54 @@ export default function Pets() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
+    // Reset the input value so the same file can be selected again if needed
+    e.target.value = "";
+
     setUploading(true);
     try {
       const compressedBlob = await compressImageToWebP(file, { maxWidth: 600, maxHeight: 600, quality: 0.8 });
       const fileName = `${user.id}/${Date.now()}.webp`;
 
-      const { error } = await supabase.storage
+      // Attempt Supabase Storage upload
+      const { error: uploadError } = await supabase.storage
         .from("pet-photos")
-        .upload(fileName, compressedBlob, { contentType: "image/webp" });
+        .upload(fileName, compressedBlob, {
+          contentType: "image/webp",
+          upsert: false,
+        });
 
-      if (error) {
-        toast.error("Failed to upload photo");
-        setUploading(false);
+      if (!uploadError) {
+        // Storage upload succeeded — use the public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from("pet-photos")
+          .getPublicUrl(fileName);
+        setForm((prev) => ({ ...prev, photo_url: publicUrl }));
+        toast.success("Photo uploaded successfully");
         return;
       }
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("pet-photos").getPublicUrl(fileName);
+      // Storage upload failed — log the real error for debugging
+      console.warn("Supabase Storage upload failed:", uploadError.message, uploadError);
 
-      setForm({ ...form, photo_url: publicUrl });
+      // Fallback: convert to base64 data URL and store directly
+      // This works regardless of bucket configuration
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const dataUrl = evt.target?.result as string;
+        if (dataUrl) {
+          setForm((prev) => ({ ...prev, photo_url: dataUrl }));
+          toast.success("Photo added (stored locally)");
+        } else {
+          toast.error("Failed to read photo");
+        }
+      };
+      reader.onerror = () => {
+        toast.error("Failed to process photo");
+      };
+      reader.readAsDataURL(compressedBlob);
     } catch (err) {
-      toast.error("Failed to compress or upload photo");
+      console.error("Photo upload error:", err);
+      toast.error("Failed to process photo");
     } finally {
       setUploading(false);
     }

@@ -77,12 +77,19 @@ export function ReorderButton({ orderItems, variant = "outline", size = "sm" }: 
             ? `${product.name} (Owner Only)`
             : `${product.name} (Pet Only)`;
 
+        // Derive per-slot quantities correctly:
+        // For a matching set (combo) both owner and pet get the full quantity.
+        // For owner-only, only ownerQty is set; for pet-only, only petQty is set.
+        const ownerQty = ownerSize !== "N/A" ? group.quantity : 0;
+        const petQty = petSize !== "N/A" ? group.quantity : 0;
+
         const existingInCart = cartItems.find((ci) =>
           CartItemModel.generateKey(ci.id, ci.ownerSize, ci.petSize) ===
           CartItemModel.generateKey(product.id, ownerSize, petSize)
         );
 
-        const targetQty = (existingInCart?.quantity || 0) + group.quantity;
+        const targetOwnerQty = (existingInCart?.ownerQuantity || 0) + ownerQty;
+        const targetPetQty = (existingInCart?.petQuantity || 0) + petQty;
 
         if (!existingInCart) {
           addToCart({
@@ -93,12 +100,14 @@ export function ReorderButton({ orderItems, variant = "outline", size = "sm" }: 
             ownerSize,
             petSize,
             slug: product.slug,
+            ownerQuantity: ownerQty,
+            petQuantity: petQty,
           });
           addedCount++;
         }
 
-        if (targetQty > 0) {
-          await updateQuantity(product.id, ownerSize, petSize, targetQty);
+        if (targetOwnerQty > 0 || targetPetQty > 0) {
+          await updateQuantity(product.id, ownerSize, petSize, targetOwnerQty, targetPetQty);
         }
       }
 
