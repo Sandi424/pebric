@@ -46,8 +46,9 @@ const PHONE_RE = /^(?:(?:\+?91)|0)?[6-9]\d{9}$/;
 const COUNTRY_RE = /^[A-Za-z][A-Za-z\s\-]{1,49}$/;
 
 function validateCheckoutForm(data: CheckoutFormValues): string | null {
-  const phone = data.phone.replace(/[\s\-().]/g, "");
-  if (!PHONE_RE.test(phone)) {
+  const rawDigits = (data.phone || "").replace(/\D/g, "");
+  const phoneDigits = rawDigits.startsWith("91") && rawDigits.length === 12 ? rawDigits.slice(2) : rawDigits;
+  if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
     return "Phone number must be a valid 10-digit Indian mobile number.";
   }
   if (!POSTAL_CODE_RE.test(data.postalCode.trim())) {

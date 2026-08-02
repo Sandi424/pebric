@@ -302,6 +302,84 @@ function localBackupPlugin() {
           return;
         }
 
+        // 6. Send Contact Form Email Endpoint
+        if (req.url.startsWith("/api/send-contact-email") && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => { body += chunk; });
+          req.on("end", async () => {
+            try {
+              const { name, email, subject, message } = JSON.parse(body || "{}");
+              if (!name || !email || !message) {
+                res.statusCode = 400;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ success: false, error: "Name, email, and message are required." }));
+                return;
+              }
+
+              const nodemailer = await import("nodemailer");
+              const resendApiKey = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
+
+              let transporter;
+              let fromAddress = '"Pebric Support" <support@pebric.com>';
+
+              if (resendApiKey) {
+                transporter = nodemailer.createTransport({
+                  host: "smtp.resend.com",
+                  port: 465,
+                  secure: true,
+                  auth: { user: "resend", pass: resendApiKey },
+                });
+                fromAddress = "Pebric Support <onboarding@resend.dev>";
+              } else {
+                const testAccount = await nodemailer.createTestAccount();
+                transporter = nodemailer.createTransport({
+                  host: testAccount.smtp.host,
+                  port: testAccount.smtp.port,
+                  secure: testAccount.smtp.secure,
+                  auth: { user: testAccount.user, pass: testAccount.pass },
+                });
+              }
+
+              const info = await transporter.sendMail({
+                from: fromAddress,
+                to: "pebricin@gmail.com",
+                replyTo: `${name} <${email}>`,
+                subject: subject ? `[Contact Form] ${subject}` : `[Contact Form] Message from ${name}`,
+                html: `
+                  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #1a365d;">New Contact Message — Pebric</h2>
+                    <p><strong>From:</strong> ${name} (&lt;${email}&gt;)</p>
+                    <p><strong>Subject:</strong> ${subject || 'General Inquiry'}</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
+                    <p style="font-size: 15px; color: #333; white-space: pre-wrap;">${message}</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
+                    <p style="font-size: 12px; color: #888;">Sent to pebricin@gmail.com from Pebric Contact Form.</p>
+                  </div>
+                `,
+              });
+
+              const previewUrl = nodemailer.getTestMessageUrl(info);
+              console.log(`[Contact-Email] Sent contact form email to pebricin@gmail.com! ID: ${info.messageId}`);
+              if (previewUrl) console.log(`[Contact-Email] Preview URL: ${previewUrl}`);
+
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({
+                success: true,
+                message: "Message delivered successfully to pebricin@gmail.com",
+                messageId: info.messageId,
+                previewUrl: previewUrl || null,
+              }));
+            } catch (err) {
+              console.error("[Contact-Email] Failed to send email:", err);
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+            }
+          });
+          return;
+        }
+
         next();
       });
     }

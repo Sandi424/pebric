@@ -18,16 +18,35 @@ export default function Contact() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      setIsSubmitting(false);
-      toast.success("Message sent!", {
-        description: "We'll get back to you within 24 hours.",
+    try {
+      const response = await fetch("/api/send-contact-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, subject, message }),
       });
-      setName("");
-      setEmail("");
-      setSubject("");
-      setMessage("");
-    }, 1000);
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        toast.success("Message sent successfully!", {
+          description: "Your message has been delivered to pebricin@gmail.com.",
+        });
+        setName("");
+        setEmail("");
+        setSubject("");
+        setMessage("");
+      } else {
+        toast.error("Failed to send message", {
+          description: data.error || "Please try again later.",
+        });
+      }
+    } catch (err) {
+      toast.error("Failed to send message", {
+        description: "Network error. Please try again later.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

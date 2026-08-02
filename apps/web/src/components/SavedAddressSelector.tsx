@@ -13,15 +13,28 @@ import {
 import {
   useSavedAddresses,
   useCreateSavedAddress,
+  useUpdateSavedAddress,
   useDeleteSavedAddress,
   SavedAddress,
 } from "@/hooks/useSavedAddresses";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, MapPin, Trash2, Check, Loader2, XCircle } from "lucide-react";
+import { Plus, MapPin, Trash2, Pencil, Loader2, XCircle } from "lucide-react";
 import { usePincodeLookup } from "@/hooks/usePincodeLookup";
 
 const POSTAL_CODE_RE = /^[1-9][0-9]{5}$/;
-const PHONE_RE = /^[6-9]\d{9}$/;
+
+export function normalizePhoneDigits(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("91") && digits.length === 12) {
+    return digits.slice(2);
+  }
+  return digits;
+}
+
+export function isValidPhone(phone: string): boolean {
+  const digits = normalizePhoneDigits(phone);
+  return /^[6-9]\d{9}$/.test(digits);
+}
 
 interface SavedAddressSelectorProps {
   onAddressSelect: (address: {
@@ -41,10 +54,13 @@ export function SavedAddressSelector({
   const { user } = useAuth();
   const { data: addresses = [] } = useSavedAddresses();
   const createAddress = useCreateSavedAddress();
+  const updateAddress = useUpdateSavedAddress();
   const deleteAddress = useDeleteSavedAddress();
 
   const [selectedId, setSelectedId] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<SavedAddress | null>(null);
+
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     full_name: "",
@@ -96,6 +112,29 @@ export function SavedAddressSelector({
     });
   };
 
+  const handleUpdateAddress = async () => {
+    if (!editingAddress) return;
+    await updateAddress.mutateAsync({
+      id: editingAddress.id,
+      label: editingAddress.label,
+      full_name: editingAddress.full_name,
+      phone: editingAddress.phone,
+      address_line1: editingAddress.address_line1,
+      address_line2: editingAddress.address_line2,
+      city: editingAddress.city,
+      state: editingAddress.state,
+      postal_code: editingAddress.postal_code,
+      country: editingAddress.country,
+      is_default: editingAddress.is_default,
+    });
+
+    // Re-trigger address selection if the updated address is currently selected
+    if (selectedId === editingAddress.id) {
+      handleSelectAddress(editingAddress.id);
+    }
+    setEditingAddress(null);
+  };
+
   if (addresses.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-4">
@@ -118,6 +157,7 @@ export function SavedAddressSelector({
               onChange={setNewAddress}
               onSubmit={handleAddAddress}
               isLoading={createAddress.isPending}
+              buttonText="Save Address"
             />
           </DialogContent>
         </Dialog>
@@ -145,6 +185,7 @@ export function SavedAddressSelector({
               onChange={setNewAddress}
               onSubmit={handleAddAddress}
               isLoading={createAddress.isPending}
+              buttonText="Save Address"
             />
           </DialogContent>
         </Dialog>
@@ -155,8 +196,10 @@ export function SavedAddressSelector({
           {addresses.map((address) => (
             <div
               key={address.id}
-              className={`relative rounded-lg border p-4 ${
-                selectedId === address.id ? "border-primary" : "border-border"
+              className={`relative rounded-lg border p-4 transition-all ${
+                selectedId === address.id
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/50"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -167,38 +210,83 @@ export function SavedAddressSelector({
                 />
                 <Label htmlFor={address.id} className="flex-1 cursor-pointer">
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    <span className="font-medium">{address.label}</span>
+                    <MapPin className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-foreground">{address.label}</span>
                     {address.is_default && (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                      <span className="text-[10px] uppercase font-bold tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded">
                         Default
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {address.full_name}
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {address.full_name} {address.phone && `(${address.phone})`}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {address.address_line1}
                     {address.address_line2 && `, ${address.address_line2}`}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {address.city}, {address.postal_code}, {address.country}
+                    {address.city}, {address.state ? `${address.state}, ` : ""}{address.postal_code}, {address.country}
                   </p>
                 </Label>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => deleteAddress.mutate(address.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground" />
-                </Button>
+
+                {/* Edit & Delete Action Buttons */}
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 text-primary border-primary/20 hover:bg-primary/10"
+                    title="Edit Address"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingAddress(address);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-destructive/10"
+                    title="Delete Address"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      deleteAddress.mutate(address.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       </RadioGroup>
+
+      {/* Edit Address Dialog Modal */}
+      <Dialog
+        open={!!editingAddress}
+        onOpenChange={(open) => {
+          if (!open) setEditingAddress(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Address</DialogTitle>
+          </DialogHeader>
+          {editingAddress && (
+            <AddressForm
+              address={editingAddress}
+              onChange={(updated) => setEditingAddress((prev) => (prev ? { ...prev, ...updated } : null))}
+              onSubmit={handleUpdateAddress}
+              isLoading={updateAddress.isPending}
+              buttonText="Update Address"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -208,11 +296,13 @@ function AddressForm({
   onChange,
   onSubmit,
   isLoading,
+  buttonText = "Save Address",
 }: {
   address: Partial<SavedAddress>;
   onChange: (address: Partial<SavedAddress>) => void;
   onSubmit: () => void;
   isLoading: boolean;
+  buttonText?: string;
 }) {
   const { status, fetchPincode, resetStatus } = usePincodeLookup();
 
@@ -241,18 +331,16 @@ function AddressForm({
 
   const postalCode = address.postal_code || "";
   const phone = address.phone || "";
-  const phoneDigits = phone.replace(/[\s\-().]/g, "");
-  const phoneInvalid = phone.trim() !== "" && phone.trim() !== "+91" && !PHONE_RE.test(phoneDigits);
+  const phoneValid = phone.trim() !== "" && isValidPhone(phone);
   const isPincodeValid = status === "valid" || (postalCode.length === 6 && POSTAL_CODE_RE.test(postalCode) && !!address.city);
 
   const isValid =
     !isLoading &&
-    !phoneInvalid &&
+    phoneValid &&
     status !== "invalid" &&
     status !== "loading" &&
     !!address.label?.trim() &&
     !!address.full_name?.trim() &&
-    !!address.phone?.trim() &&
     !!address.address_line1?.trim() &&
     postalCode.length === 6 &&
     POSTAL_CODE_RE.test(postalCode) &&
@@ -282,14 +370,16 @@ function AddressForm({
         </div>
       </div>
       <div>
-        <Label>Phone <span className="text-destructive">*</span></Label>
+        <Label>Mobile Number <span className="text-destructive">*</span></Label>
         <Input
           value={address.phone || ""}
           onChange={(e) => onChange({ ...address, phone: e.target.value })}
-          placeholder="+91 98765 43210"
-          className={phoneInvalid ? "border-destructive" : ""}
+          placeholder="9876543210"
+          className={!phoneValid && phone.trim() !== "" ? "border-destructive" : ""}
         />
-        {phoneInvalid && <p className="mt-1 text-xs text-destructive">Enter a valid 10-digit mobile number</p>}
+        {!phoneValid && phone.trim() !== "" && (
+          <p className="mt-1 text-xs text-destructive">Enter a valid 10-digit mobile number</p>
+        )}
       </div>
       <div>
         <Label>Pincode <span className="text-destructive">*</span></Label>
@@ -357,7 +447,7 @@ function AddressForm({
       </div>
       <Button onClick={onSubmit} disabled={!isValid} className="w-full">
         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        {isLoading ? "Saving..." : "Save Address"}
+        {isLoading ? "Saving..." : buttonText}
       </Button>
     </div>
   );
