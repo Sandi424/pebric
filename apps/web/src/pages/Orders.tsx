@@ -154,24 +154,30 @@ export default function Orders() {
                         key={item.id}
                         className="flex items-center gap-4"
                       >
-                        {item.product_image && (
-                          <OptimizedImage
-                            src={item.product_image}
-                            alt={item.product_name}
-                            wrapperClassName="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden"
-                            className="object-cover"
-                            sizes="64px"
-                          />
-                        )}
+                        <OptimizedImage
+                          src={
+                            item.product_image ||
+                            "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=400"
+                          }
+                          alt={item.product_name || "Product"}
+                          wrapperClassName="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden border border-border"
+                          className="object-cover"
+                          sizes="64px"
+                        />
                         <div className="flex-1">
-                          <p className="font-medium">{item.product_name}</p>
+                          <p className="font-medium text-foreground">{item.product_name}</p>
                           <p className="text-sm text-muted-foreground">
                             Qty: {item.quantity}
-                            {item.size && ` • Size: ${item.size}`}
-                            {item.pet_size && ` • Pet: ${item.pet_size}`}
+                            {item.size && item.size !== "N/A" ? ` • Size: ${item.size}` : ""}
+                            {item.pet_size && item.pet_size !== "N/A" ? ` • Pet Size: ${item.pet_size}` : ""}
                           </p>
                         </div>
-                        <p className="font-medium">₹{item.total_price.toFixed(2)}</p>
+                        <div className="text-right">
+                          <p className="font-medium text-foreground">₹{(item.total_price || 0).toFixed(2)}</p>
+                          {item.quantity > 1 && item.unit_price > 0 && (
+                            <p className="text-xs text-muted-foreground">₹{item.unit_price.toFixed(2)} each</p>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -179,15 +185,15 @@ export default function Orders() {
                   <div className="border-t border-border pt-4">
                     <div className="flex justify-between text-sm">
                       <span>Subtotal</span>
-                      <span>₹{order.subtotal.toFixed(2)}</span>
+                      <span className="font-medium">₹{(order.subtotal || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Shipping</span>
-                      <span>₹{order.shipping_cost.toFixed(2)}</span>
+                      <span>{order.shipping_cost > 0 ? `₹${order.shipping_cost.toFixed(2)}` : "Free"}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Tax</span>
-                      <span>₹{order.tax.toFixed(2)}</span>
+                      <span>₹{(order.tax || 0).toFixed(2)}</span>
                     </div>
                     {order.payment_method?.toLowerCase() === "cod" && (
                       <div className="flex justify-between text-sm">
@@ -195,9 +201,9 @@ export default function Orders() {
                         <span>₹11.00</span>
                       </div>
                     )}
-                    <div className="mt-2 flex justify-between border-t border-border pt-2 font-medium">
+                    <div className="mt-2 flex justify-between border-t border-border pt-2 font-medium text-base text-foreground">
                       <span>Total</span>
-                      <span>₹{order.total.toFixed(2)}</span>
+                      <span>₹{(order.total || 0).toFixed(2)}</span>
                     </div>
                   </div>
 

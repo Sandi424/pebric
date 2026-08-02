@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrdersWithTracking, useShipmentTracking } from "@/hooks/useShipmentTracking";
-import { Package, Truck, CheckCircle, MapPin, Clock, Search, ChevronRight } from "lucide-react";
+import { Package, Truck, CheckCircle, MapPin, Clock, Search, ChevronRight, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SEOHead } from "@/components/SEOHead";
 import { supabase } from "@/integrations/client";
@@ -48,68 +48,20 @@ export default function Tracking() {
     const input = trackingInput.trim();
     if (!input) return;
 
-    // First try the pre-loaded active shipments list (fast path)
-    const order = orders.find(
-      (o) => o.order_number === input || o.tracking_number === input
+    const found = orders.find(
+      (o) =>
+        o.id === input ||
+        o.order_number === input ||
+        (o.order_number && o.order_number.toLowerCase() === input.toLowerCase()) ||
+        o.tracking_number === input
     );
-    if (order) {
-      setSelectedOrderId(order.id);
-      setTrackingInput("");
-      return;
+
+    if (found) {
+      setSelectedOrderId(found.id);
+    } else {
+      setSelectedOrderId(input);
     }
-
-    // Fallback: search ALL user orders in DB (all statuses including pending and delivered)
-    if (user) {
-      try {
-        // Try matching by order_number first
-        const { data: byOrderNum } = await supabase
-          .from("orders")
-          .select("id, order_number, status")
-          .eq("user_id", user.id)
-          .eq("order_number", input)
-          .maybeSingle();
-
-        if (byOrderNum) {
-          setSelectedOrderId(byOrderNum.id);
-          setTrackingInput("");
-          return;
-        }
-
-        // Try matching by tracking_number
-        const { data: byTracking } = await supabase
-          .from("orders")
-          .select("id, order_number, status")
-          .eq("user_id", user.id)
-          .eq("tracking_number", input)
-          .maybeSingle();
-
-        if (byTracking) {
-          setSelectedOrderId(byTracking.id);
-          setTrackingInput("");
-          return;
-        }
-
-        // Also try case-insensitive search using ilike for the order number
-        const { data: byIlike } = await supabase
-          .from("orders")
-          .select("id, order_number, status")
-          .eq("user_id", user.id)
-          .ilike("order_number", input)
-          .maybeSingle();
-
-        if (byIlike) {
-          setSelectedOrderId(byIlike.id);
-          setTrackingInput("");
-          return;
-        }
-      } catch (err) {
-        console.warn("Order lookup fallback failed:", err);
-      }
-    }
-
-    toast.error("Order not found", {
-      description: "Please check the order number and try again.",
-    });
+    setTrackingInput("");
   };
 
   const getStatusIndex = (status: string) => {
@@ -199,10 +151,11 @@ export default function Tracking() {
                       <div className="flex items-center gap-2">
                         <span
                           className={cn(
-                            "rounded-full px-2 py-1 text-xs font-medium",
+                            "rounded-full px-2 py-1 text-xs font-medium capitalize",
                             order.status === "shipped" && "bg-indigo-100 text-indigo-700",
                             order.status === "processing" && "bg-purple-100 text-purple-700",
-                            order.status === "confirmed" && "bg-blue-100 text-blue-700"
+                            order.status === "confirmed" && "bg-blue-100 text-blue-700",
+                            order.status === "cancelled" && "bg-red-100 text-red-700"
                           )}
                         >
                           {order.status}
@@ -234,7 +187,14 @@ export default function Tracking() {
                   {/* Order Info */}
                   <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6">
                     <div>
-                      <p className="font-display text-2xl">{selectedOrder.order_number}</p>
+                      <div className="flex items-center gap-3">
+                        <p className="font-display text-2xl">{selectedOrder.order_number}</p>
+                        {selectedOrder.status === "cancelled" && (
+                          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 flex items-center gap-1">
+                            <XCircle className="h-3.5 w-3.5" /> Cancelled
+                          </span>
+                        )}
+                      </div>
                       {selectedOrder.tracking_number && (
                         <p className="mt-1 text-sm text-muted-foreground">
                           Tracking: {selectedOrder.tracking_number}
@@ -253,58 +213,68 @@ export default function Tracking() {
 
                   {/* Progress Tracker */}
                   <div className="mb-8">
-                    <div className="flex items-center justify-between">
-                      {statusSteps.map((step, index) => {
-                        const currentIndex = getStatusIndex(selectedOrder.status);
-                        const isCompleted = index <= currentIndex;
-                        const isCurrent = index === currentIndex;
-                        const Icon = step.icon;
+                    {selectedOrder.status === "cancelled" ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50/50 p-6 text-center">
+                        <XCircle className="mx-auto mb-2 h-10 w-10 text-red-600" />
+                        <p className="font-display text-xl text-red-700 font-medium">Order Cancelled</p>
+                        <p className="mt-1 text-sm text-red-600">
+                          This order has been cancelled and is no longer active.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        {statusSteps.map((step, index) => {
+                          const currentIndex = getStatusIndex(selectedOrder.status);
+                          const isCompleted = index <= currentIndex;
+                          const isCurrent = index === currentIndex;
+                          const Icon = step.icon;
 
-                        return (
-                          <div
-                            key={step.key}
-                            className="flex flex-1 flex-col items-center"
-                          >
-                            <div className="relative flex w-full items-center">
-                              {index > 0 && (
+                          return (
+                            <div
+                              key={step.key}
+                              className="flex flex-1 flex-col items-center"
+                            >
+                              <div className="relative flex w-full items-center">
+                                {index > 0 && (
+                                  <div
+                                    className={cn(
+                                      "h-1 flex-1",
+                                      index <= currentIndex ? "bg-foreground" : "bg-border"
+                                    )}
+                                  />
+                                )}
                                 <div
                                   className={cn(
-                                    "h-1 flex-1",
-                                    index <= currentIndex ? "bg-foreground" : "bg-border"
+                                    "flex h-10 w-10 items-center justify-center rounded-full border-2",
+                                    isCompleted
+                                      ? "border-foreground bg-foreground text-background"
+                                      : "border-border bg-background text-muted-foreground"
                                   )}
-                                />
-                              )}
-                              <div
+                                >
+                                  <Icon className="h-5 w-5" />
+                                </div>
+                                {index < statusSteps.length - 1 && (
+                                  <div
+                                    className={cn(
+                                      "h-1 flex-1",
+                                      index < currentIndex ? "bg-foreground" : "bg-border"
+                                    )}
+                                  />
+                                )}
+                              </div>
+                              <p
                                 className={cn(
-                                  "flex h-10 w-10 items-center justify-center rounded-full border-2",
-                                  isCompleted
-                                    ? "border-foreground bg-foreground text-background"
-                                    : "border-border bg-background text-muted-foreground"
+                                  "mt-2 text-center text-xs",
+                                  isCurrent ? "font-medium" : "text-muted-foreground"
                                 )}
                               >
-                                <Icon className="h-5 w-5" />
-                              </div>
-                              {index < statusSteps.length - 1 && (
-                                <div
-                                  className={cn(
-                                    "h-1 flex-1",
-                                    index < currentIndex ? "bg-foreground" : "bg-border"
-                                  )}
-                                />
-                              )}
+                                {step.label}
+                              </p>
                             </div>
-                            <p
-                              className={cn(
-                                "mt-2 text-center text-xs",
-                                isCurrent ? "font-medium" : "text-muted-foreground"
-                              )}
-                            >
-                              {step.label}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Timeline */}

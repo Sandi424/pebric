@@ -11,6 +11,7 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
+  Pencil,
 } from "lucide-react";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { OptimizedImage } from "@/components/ui/optimized-image";
@@ -18,6 +19,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateOrder } from "@/hooks/useOrders";
@@ -33,7 +40,11 @@ import { useRazorpay, RazorpayPaymentResponse } from "@/hooks/useRazorpay";
 import { toast } from "sonner";
 import { SEOHead } from "@/components/SEOHead";
 import { usePincodeLookup } from "@/hooks/usePincodeLookup";
-import { useSavedAddresses } from "@/hooks/useSavedAddresses";
+import {
+  useSavedAddresses,
+  useUpdateSavedAddress,
+  SavedAddress,
+} from "@/hooks/useSavedAddresses";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
@@ -364,6 +375,8 @@ export default function Checkout() {
   const { data: savedAddresses = [] } = useSavedAddresses();
   const [selectedAddressId, setSelectedAddressId] = useState<string>("new");
   const [hasInitializedAddress, setHasInitializedAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<SavedAddress | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
     if (savedAddresses.length > 0 && !hasInitializedAddress) {
@@ -552,17 +565,27 @@ export default function Checkout() {
   const buildOrderItems = () => {
     const items: {
       productId: string;
+      productName?: string;
+      productImage?: string;
+      price?: number;
       quantity: number;
       size: string | null;
       petSize: string | null;
     }[] = [];
 
     checkoutItems.forEach((item) => {
+      const itemName = (item as any).name || (item as any).productName || "Product Item";
+      const itemImg = (item as any).image || (item as any).image_url || (item as any).productImage || null;
       const isMatchingSet = item.ownerSize !== "N/A" && item.petSize !== "N/A";
+      const halfPrice = Math.round(((item as any).price || 0) * 0.5);
+
       if (isMatchingSet) {
         if (item.ownerQuantity > 0) {
           items.push({
             productId: item.id.toString(),
+            productName: `${itemName} (Human)`,
+            productImage: itemImg,
+            price: halfPrice,
             quantity: item.ownerQuantity,
             size: item.ownerSize,
             petSize: "N/A",
@@ -571,6 +594,9 @@ export default function Checkout() {
         if (item.petQuantity > 0) {
           items.push({
             productId: item.id.toString(),
+            productName: `${itemName} (Pet)`,
+            productImage: itemImg,
+            price: halfPrice,
             quantity: item.petQuantity,
             size: "N/A",
             petSize: item.petSize,
@@ -579,6 +605,9 @@ export default function Checkout() {
       } else {
         items.push({
           productId: item.id.toString(),
+          productName: itemName,
+          productImage: itemImg,
+          price: (item as any).price || 0,
           quantity: item.quantity,
           size: item.ownerSize,
           petSize: item.petSize,
@@ -1021,22 +1050,39 @@ export default function Checkout() {
                             selectedAddressId === addr.id ? "border-primary bg-primary/5" : "border-border"
                           }`}
                         >
-                          <div className="flex items-start gap-3">
-                            <RadioGroupItem value={addr.id} id={addr.id} className="mt-1" />
-                            <Label htmlFor={addr.id} className="flex-1 cursor-pointer">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-foreground">{addr.label}</span>
-                                {addr.is_default && (
-                                  <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                                    Default
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-1 text-sm font-medium text-foreground">{addr.full_name}</p>
-                              <p className="text-sm text-muted-foreground">{addr.address_line1}{addr.address_line2 ? `, ${addr.address_line2}` : ""}</p>
-                              <p className="text-sm text-muted-foreground">{addr.city}, {addr.state} {addr.postal_code}</p>
-                              {addr.phone && <p className="mt-1 text-sm text-muted-foreground">Phone: {addr.phone}</p>}
-                            </Label>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <RadioGroupItem value={addr.id} id={addr.id} className="mt-1" />
+                              <Label htmlFor={addr.id} className="flex-1 cursor-pointer">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-foreground">{addr.label}</span>
+                                  {addr.is_default && (
+                                    <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                                      Default
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="mt-1 text-sm font-medium text-foreground">{addr.full_name}</p>
+                                <p className="text-sm text-muted-foreground">{addr.address_line1}{addr.address_line2 ? `, ${addr.address_line2}` : ""}</p>
+                                <p className="text-sm text-muted-foreground">{addr.city}, {addr.state} {addr.postal_code}</p>
+                                {addr.phone && <p className="mt-1 text-sm text-muted-foreground">Phone: {addr.phone}</p>}
+                              </Label>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 text-xs flex items-center gap-1.5 text-foreground hover:bg-muted"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingAddress(addr);
+                                setIsEditModalOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -1349,6 +1395,232 @@ export default function Checkout() {
           </div>
         </form>
       </div>
+
+      <EditCheckoutAddressModal
+        address={editingAddress}
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSaveSuccess={(updated) => {
+          if (selectedAddressId === updated.id) {
+            setFormData((prev) => ({
+              ...prev,
+              fullName: updated.full_name,
+              phone: updated.phone || "+91 ",
+              address: updated.address_line1,
+              area: updated.address_line2 || "",
+              city: updated.city,
+              state: updated.state || "",
+              postalCode: updated.postal_code,
+              country: updated.country || "India",
+            }));
+          }
+        }}
+      />
     </PageLayout>
+  );
+}
+
+function EditCheckoutAddressModal({
+  address,
+  isOpen,
+  onClose,
+  onSaveSuccess,
+}: {
+  address: SavedAddress | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSaveSuccess: (updated: SavedAddress) => void;
+}) {
+  const updateAddress = useUpdateSavedAddress();
+  const { status, fetchPincode, resetStatus } = usePincodeLookup();
+
+  const [form, setForm] = useState({
+    label: "",
+    full_name: "",
+    phone: "",
+    address_line1: "",
+    address_line2: "",
+    postal_code: "",
+    city: "",
+    state: "",
+    country: "India",
+  });
+
+  useEffect(() => {
+    if (address) {
+      setForm({
+        label: address.label || "Home",
+        full_name: address.full_name || "",
+        phone: address.phone || "+91 ",
+        address_line1: address.address_line1 || "",
+        address_line2: address.address_line2 || "",
+        postal_code: address.postal_code || "",
+        city: address.city || "",
+        state: address.state || "",
+        country: address.country || "India",
+      });
+      resetStatus();
+    }
+  }, [address, resetStatus]);
+
+  if (!address) return null;
+
+  const handlePincodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const pin = e.target.value.trim();
+    setForm((prev) => ({ ...prev, postal_code: pin }));
+    resetStatus();
+    if (pin.length === 6 && /^[1-9][0-9]{5}$/.test(pin)) {
+      const result = await fetchPincode(pin);
+      if (result) {
+        setForm((prev) => ({
+          ...prev,
+          city: result.city,
+          state: result.state,
+          country: result.country,
+        }));
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name.trim() || !form.phone.trim() || !form.address_line1.trim() || !form.postal_code.trim()) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+
+    try {
+      const payload = {
+        id: address.id,
+        label: form.label,
+        full_name: form.full_name,
+        phone: form.phone,
+        address_line1: form.address_line1,
+        address_line2: form.address_line2 || null,
+        postal_code: form.postal_code,
+        city: form.city,
+        state: form.state || null,
+        country: form.country || "India",
+      };
+
+      await updateAddress.mutateAsync(payload);
+      onSaveSuccess({ ...address, ...payload } as SavedAddress);
+      toast.success("Address updated successfully!");
+      onClose();
+    } catch (err) {
+      console.error("Failed to update address:", err);
+      toast.error("Failed to update address");
+    }
+  };
+
+  const isSaving = updateAddress.isPending;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Edit Delivery Address</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-label">Label</Label>
+              <Input
+                id="edit-label"
+                value={form.label}
+                onChange={(e) => setForm({ ...form, label: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-full-name">Full Name</Label>
+              <Input
+                id="edit-full-name"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="edit-phone">Mobile Number</Label>
+            <Input
+              id="edit-phone"
+              type="tel"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="edit-postal-code">Pincode</Label>
+            <div className="relative">
+              <Input
+                id="edit-postal-code"
+                value={form.postal_code}
+                onChange={handlePincodeChange}
+                maxLength={6}
+                required
+              />
+              {status === "loading" && (
+                <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="edit-address1">Flat, House no., Building</Label>
+            <Input
+              id="edit-address1"
+              value={form.address_line1}
+              onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="edit-address2">Area, Street, Sector (Optional)</Label>
+            <Input
+              id="edit-address2"
+              value={form.address_line2}
+              onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-city">Town / City</Label>
+              <Input
+                id="edit-city"
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-state">State</Label>
+              <Input
+                id="edit-state"
+                value={form.state}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -136,7 +136,69 @@ export function useOrders() {
         }
       });
 
-      return Array.from(combinedMap.values());
+      let productsMap = new Map<string, any>();
+      try {
+        const { data: productsData } = await supabase
+          .from("products")
+          .select("id, name, image_url, images, price");
+        if (productsData) {
+          productsData.forEach((p) => productsMap.set(p.id, p));
+        }
+      } catch (err) {
+        console.warn("Could not fetch catalog products for order enrichment:", err);
+      }
+
+      return Array.from(combinedMap.values()).map((ord) => {
+        const items = (ord.items || []).map((item) => {
+          const product = item.product_id ? productsMap.get(item.product_id) : null;
+          const name =
+            item.product_name && item.product_name !== "Product Item"
+              ? item.product_name
+              : product?.name || "Premium Apparel";
+          const img =
+            item.product_image ||
+            product?.image_url ||
+            (product?.images && product.images[0]) ||
+            "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=400";
+          const unitPrice =
+            item.unit_price && item.unit_price > 0
+              ? item.unit_price
+              : product?.price || 599;
+          const totalPrice =
+            item.total_price && item.total_price > 0
+              ? item.total_price
+              : unitPrice * item.quantity;
+
+          return {
+            ...item,
+            product_name: name,
+            product_image: img,
+            unit_price: unitPrice,
+            total_price: totalPrice,
+          };
+        });
+
+        const computedItemsSubtotal = items.reduce(
+          (sum, i) => sum + (i.total_price || 0),
+          0,
+        );
+        let subtotal = ord.subtotal && ord.subtotal > 0 ? ord.subtotal : computedItemsSubtotal;
+        const shippingCost = ord.shipping_cost ?? 0;
+        const tax = ord.tax ?? 0;
+        const total =
+          ord.total && ord.total > 0
+            ? ord.total
+            : subtotal + shippingCost + tax;
+
+        return {
+          ...ord,
+          subtotal,
+          shipping_cost: shippingCost,
+          tax,
+          total,
+          items,
+        };
+      });
     },
     enabled: !!user,
   });
@@ -374,6 +436,7 @@ export function useCreateOrder() {
                   ? item.productId
                   : null,
                 product_name: (item as any).productName || (item as any).name || "Product Item",
+                product_image: (item as any).productImage || (item as any).image || (item as any).image_url || null,
                 quantity: item.quantity,
                 size: item.size || null,
                 pet_size: item.petSize || null,
@@ -413,6 +476,7 @@ export function useCreateOrder() {
               order_id: fallbackId,
               product_id: item.productId ? String(item.productId) : null,
               product_name: (item as any).productName || (item as any).name || "Product Item",
+              product_image: (item as any).productImage || (item as any).image || (item as any).image_url || null,
               quantity: item.quantity,
               size: item.size || null,
               pet_size: item.petSize || null,

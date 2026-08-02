@@ -318,11 +318,23 @@ function localBackupPlugin() {
 
               const nodemailer = await import("nodemailer");
               const resendApiKey = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
+              const smtpHost = process.env.SMTP_HOST || process.env.VITE_SMTP_HOST || "smtp.gmail.com";
+              const smtpPort = Number(process.env.SMTP_PORT || process.env.VITE_SMTP_PORT || 465);
+              const smtpUser = process.env.SMTP_USER || process.env.VITE_SMTP_USER || process.env.GMAIL_USER;
+              const smtpPass = process.env.SMTP_PASS || process.env.VITE_SMTP_PASS || process.env.GMAIL_APP_PASS;
 
               let transporter;
               let fromAddress = '"Pebric Support" <support@pebric.com>';
 
-              if (resendApiKey) {
+              if (smtpUser && smtpPass) {
+                transporter = nodemailer.createTransport({
+                  host: smtpHost,
+                  port: smtpPort,
+                  secure: smtpPort === 465,
+                  auth: { user: smtpUser, pass: smtpPass },
+                });
+                fromAddress = `"Pebric Contact" <${smtpUser}>`;
+              } else if (resendApiKey) {
                 transporter = nodemailer.createTransport({
                   host: "smtp.resend.com",
                   port: 465,
@@ -331,13 +343,13 @@ function localBackupPlugin() {
                 });
                 fromAddress = "Pebric Support <onboarding@resend.dev>";
               } else {
-                const testAccount = await nodemailer.createTestAccount();
-                transporter = nodemailer.createTransport({
-                  host: testAccount.smtp.host,
-                  port: testAccount.smtp.port,
-                  secure: testAccount.smtp.secure,
-                  auth: { user: testAccount.user, pass: testAccount.pass },
-                });
+                res.statusCode = 500;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({
+                  success: false,
+                  error: "SMTP credentials not configured. Please add SMTP_USER and SMTP_PASS (or RESEND_API_KEY) to environment variables to send real emails to pebricin@gmail.com.",
+                }));
+                return;
               }
 
               const info = await transporter.sendMail({
@@ -358,9 +370,7 @@ function localBackupPlugin() {
                 `,
               });
 
-              const previewUrl = nodemailer.getTestMessageUrl(info);
               console.log(`[Contact-Email] Sent contact form email to pebricin@gmail.com! ID: ${info.messageId}`);
-              if (previewUrl) console.log(`[Contact-Email] Preview URL: ${previewUrl}`);
 
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
@@ -368,13 +378,15 @@ function localBackupPlugin() {
                 success: true,
                 message: "Message delivered successfully to pebricin@gmail.com",
                 messageId: info.messageId,
-                previewUrl: previewUrl || null,
               }));
-            } catch (err) {
+            } catch (err: any) {
               console.error("[Contact-Email] Failed to send email:", err);
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }));
+              res.end(JSON.stringify({
+                success: false,
+                error: err?.message || "Failed to deliver email to pebricin@gmail.com.",
+              }));
             }
           });
           return;
