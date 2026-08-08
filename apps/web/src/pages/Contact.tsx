@@ -25,7 +25,13 @@ export default function Contact() {
         body: JSON.stringify({ name, email, subject, message }),
       });
 
-      const data = await response.json();
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        const text = await response.text().catch(() => "");
+        data = { error: text || `Server returned HTTP ${response.status}` };
+      }
 
       if (response.ok && data.success) {
         toast.success("Message sent successfully!", {
@@ -40,9 +46,9 @@ export default function Contact() {
           description: data.error || "Please try again later.",
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       toast.error("Failed to send message", {
-        description: "Network error. Please try again later.",
+        description: err?.message || "Network error. Please try again later.",
       });
     } finally {
       setIsSubmitting(false);
