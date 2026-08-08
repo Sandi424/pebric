@@ -6,7 +6,7 @@
     "node": ">=18.0.0 <21.0.0"
   },
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo run build && node -e \"const fs=require('fs'); if(fs.existsSync('apps/web/dist')) fs.cpSync('apps/web/dist', 'dist', {recursive: true});\"",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

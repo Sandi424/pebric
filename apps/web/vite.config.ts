@@ -470,7 +470,26 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [react(), localBackupPlugin()],
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+  },
+  plugins: [
+    react(),
+    localBackupPlugin(),
+    {
+      name: "copy-to-root-dist",
+      closeBundle() {
+        try {
+          const rootDist = path.resolve(__dirname, "../../dist");
+          const localDist = path.resolve(__dirname, "dist");
+          if (fs.existsSync(localDist)) {
+            fs.cpSync(localDist, rootDist, { recursive: true });
+          }
+        } catch (e) {}
+      },
+    },
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

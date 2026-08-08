@@ -117,7 +117,21 @@ function mapWishlistItems(rows: WishlistQueryRow[]): WishlistItem[] {
 function getInitialCartItems(): CartItem[] {
   if (typeof window === "undefined") return [];
   try {
-    // 1. Try to find any user_cart in localStorage
+    // 1. Try active cart first (most recent across all actions)
+    const active = localStorage.getItem("pebric_active_cart");
+    if (active) {
+      const parsed = JSON.parse(active);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+
+    // 2. Try guest cart
+    const guest = localStorage.getItem("guest_cart");
+    if (guest) {
+      const parsed = JSON.parse(guest);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+
+    // 3. Try any user_cart
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith("user_cart_")) {
@@ -129,20 +143,6 @@ function getInitialCartItems(): CartItem[] {
           }
         }
       }
-    }
-
-    // 2. Try pebric_active_cart
-    const active = localStorage.getItem("pebric_active_cart");
-    if (active) {
-      const parsed = JSON.parse(active);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-
-    // 3. Try guest_cart
-    const guest = localStorage.getItem("guest_cart");
-    if (guest) {
-      const parsed = JSON.parse(guest);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch (e) {
     console.warn("Failed to load initial cart state:", e);
@@ -177,7 +177,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   // Persist cart to localStorage only when cart is ready / hydrated to avoid wiping state on mount
   useEffect(() => {
-    if (!isCartReady && !isHydratedRef.current) {
+    if (!isCartReady) {
       return;
     }
     try {
@@ -196,7 +196,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (isAuthLoading) return;
 
     if (!currentUserId) {
-      const saved = localStorage.getItem("guest_cart") || localStorage.getItem("pebric_active_cart");
+      const saved = localStorage.getItem("pebric_active_cart") || localStorage.getItem("guest_cart");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -216,7 +216,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const syncAndLoadData = async () => {
       try {
-        const guestCartJson = localStorage.getItem("guest_cart");
+        const guestCartJson = localStorage.getItem("guest_cart") || localStorage.getItem("pebric_active_cart");
         if (guestCartJson && !isMerged) {
           try {
             const guestItems: CartItem[] = JSON.parse(guestCartJson);
@@ -230,7 +230,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           setIsMerged(true);
         }
 
-        const { data: cartData } = await supabase
+        const { data: cartData, error: cartError } = await supabase
           .from("cart_items")
           .select(
             `
@@ -249,7 +249,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           )
           .eq("user_id", currentUserId);
 
-        if (cartData && cartData.length > 0) {
+        if (!cartError && cartData && cartData.length > 0) {
           const groupedItems = cartService.groupCartItems(
             cartData as unknown as RawCartItemRecord[],
           );

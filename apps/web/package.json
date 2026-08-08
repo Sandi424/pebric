@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node -e \"const fs=require('fs'); if(fs.existsSync('dist')) { fs.mkdirSync('../../dist', {recursive: true}); fs.cpSync('dist', '../../dist', {recursive: true}); console.log('Successfully copied to root dist'); }\"",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -46,6 +46,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "dotenv": "^16.6.1",
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
