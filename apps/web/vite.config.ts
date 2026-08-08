@@ -4,6 +4,16 @@ import path from "path";
 import fs from "fs";
 import http from "http";
 import https from "https";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+dotenv.config({ path: path.resolve(__dirname, ".env.local") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), "apps/web/.env") });
+dotenv.config({ path: path.resolve(process.cwd(), "apps/web/.env.local") });
 
 // Helper to download files locally (needed for offline product images backup)
 function downloadFile(url: string, dest: string): Promise<void> {
@@ -317,68 +327,124 @@ function localBackupPlugin() {
               }
 
               const nodemailer = await import("nodemailer");
-              const resendApiKey = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
+              const resendApiKey = (process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY || "").trim();
               const smtpHost = process.env.SMTP_HOST || process.env.VITE_SMTP_HOST || "smtp.gmail.com";
               const smtpPort = Number(process.env.SMTP_PORT || process.env.VITE_SMTP_PORT || 465);
               const smtpUser = process.env.SMTP_USER || process.env.VITE_SMTP_USER || process.env.GMAIL_USER;
               const smtpPass = process.env.SMTP_PASS || process.env.VITE_SMTP_PASS || process.env.GMAIL_APP_PASS;
 
-              let transporter;
-              let fromAddress = '"Pebric Support" <support@pebric.com>';
+              const emailSubject = subject ? `[Contact Form] ${subject}` : `[Contact Form] Message from ${name}`;
+              const emailHtml = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+                  <h2 style="color: #1a365d; margin-top: 0;">New Contact Message — Pebric</h2>
+                  <p style="font-size: 15px;"><strong>From:</strong> ${name} (&lt;${email}&gt;)</p>
+                  <p style="font-size: 15px;"><strong>Subject:</strong> ${subject || 'General Inquiry'}</p>
+                  <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
+                  <p style="font-size: 15px; color: #333; line-height: 1.6; white-space: pre-wrap;">${message}</p>
+                  <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
+                  <p style="font-size: 12px; color: #888;">Sent to pebricin@gmail.com from Pebric Contact Form.</p>
+                </div>
+              `;
 
-              if (smtpUser && smtpPass) {
-                transporter = nodemailer.createTransport({
+              if (resendApiKey) {
+                console.log("[Contact-Email] Sending contact form email via Resend API to pebricin@gmail.com...");
+                try {
+                  const resendRes = await fetch("https://api.resend.com/emails", {
+                    method: "POST",
+                    headers: {
+                      "Authorization": `Bearer ${resendApiKey}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      from: "Pebric Contact <onboarding@resend.dev>",
+                      to: ["pebricin@gmail.com"],
+                      reply_to: `${name} <${email}>`,
+                      subject: emailSubject,
+                      html: emailHtml,
+                    }),
+                  });
+
+                  const resendData = await resendRes.json();
+                  if (resendRes.ok && resendData.id) {
+                    console.log(`[Contact-Email] Successfully delivered via Resend API to pebricin@gmail.com! ID: ${resendData.id}`);
+                    res.statusCode = 200;
+                    res.setHeader("Content-Type", "application/json");
+                    res.end(JSON.stringify({
+                      success: true,
+                      message: "Message delivered successfully to pebricin@gmail.com",
+                      messageId: resendData.id,
+                    }));
+                    return;
+                  }
+                  console.warn("[Contact-Email] Resend REST API response not OK, attempting Resend SMTP:", resendData);
+                } catch (restErr) {
+                  console.warn("[Contact-Email] Resend REST API fetch error, trying SMTP:", restErr);
+                }
+
+                console.log("[Contact-Email] Sending via Resend SMTP to pebricin@gmail.com...");
+                const nodemailer = await import("nodemailer");
+                const transporter = nodemailer.createTransport({
+                  host: "smtp.resend.com",
+                  port: 465,
+                  secure: true,
+                  auth: {
+                    user: "resend",
+                    pass: resendApiKey,
+                  },
+                });
+
+                const info = await transporter.sendMail({
+                  from: "Pebric Contact <onboarding@resend.dev>",
+                  to: "pebricin@gmail.com",
+                  replyTo: `${name} <${email}>`,
+                  subject: emailSubject,
+                  html: emailHtml,
+                });
+
+                console.log(`[Contact-Email] Successfully delivered via Resend SMTP to pebricin@gmail.com! MessageId: ${info.messageId}`);
+                res.statusCode = 200;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({
+                  success: true,
+                  message: "Message delivered successfully to pebricin@gmail.com",
+                  messageId: info.messageId,
+                }));
+                return;
+              } else if (smtpUser && smtpPass) {
+                const nodemailer = await import("nodemailer");
+                const transporter = nodemailer.createTransport({
                   host: smtpHost,
                   port: smtpPort,
                   secure: smtpPort === 465,
                   auth: { user: smtpUser, pass: smtpPass },
                 });
-                fromAddress = `"Pebric Contact" <${smtpUser}>`;
-              } else if (resendApiKey) {
-                transporter = nodemailer.createTransport({
-                  host: "smtp.resend.com",
-                  port: 465,
-                  secure: true,
-                  auth: { user: "resend", pass: resendApiKey },
+
+                const info = await transporter.sendMail({
+                  from: `"Pebric Contact" <${smtpUser}>`,
+                  to: "pebricin@gmail.com",
+                  replyTo: `${name} <${email}>`,
+                  subject: emailSubject,
+                  html: emailHtml,
                 });
-                fromAddress = "Pebric Support <onboarding@resend.dev>";
+
+                console.log(`[Contact-Email] Sent contact form email via SMTP to pebricin@gmail.com! ID: ${info.messageId}`);
+                res.statusCode = 200;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({
+                  success: true,
+                  message: "Message delivered successfully to pebricin@gmail.com",
+                  messageId: info.messageId,
+                }));
+                return;
               } else {
                 res.statusCode = 500;
                 res.setHeader("Content-Type", "application/json");
                 res.end(JSON.stringify({
                   success: false,
-                  error: "SMTP credentials not configured. Please add SMTP_USER and SMTP_PASS (or RESEND_API_KEY) to environment variables to send real emails to pebricin@gmail.com.",
+                  error: "Email service not configured. Please add RESEND_API_KEY to environment variables to send real emails to pebricin@gmail.com.",
                 }));
                 return;
               }
-
-              const info = await transporter.sendMail({
-                from: fromAddress,
-                to: "pebricin@gmail.com",
-                replyTo: `${name} <${email}>`,
-                subject: subject ? `[Contact Form] ${subject}` : `[Contact Form] Message from ${name}`,
-                html: `
-                  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                    <h2 style="color: #1a365d;">New Contact Message — Pebric</h2>
-                    <p><strong>From:</strong> ${name} (&lt;${email}&gt;)</p>
-                    <p><strong>Subject:</strong> ${subject || 'General Inquiry'}</p>
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
-                    <p style="font-size: 15px; color: #333; white-space: pre-wrap;">${message}</p>
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;" />
-                    <p style="font-size: 12px; color: #888;">Sent to pebricin@gmail.com from Pebric Contact Form.</p>
-                  </div>
-                `,
-              });
-
-              console.log(`[Contact-Email] Sent contact form email to pebricin@gmail.com! ID: ${info.messageId}`);
-
-              res.statusCode = 200;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({
-                success: true,
-                message: "Message delivered successfully to pebricin@gmail.com",
-                messageId: info.messageId,
-              }));
             } catch (err: any) {
               console.error("[Contact-Email] Failed to send email:", err);
               res.statusCode = 500;

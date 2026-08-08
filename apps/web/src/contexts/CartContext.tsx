@@ -114,19 +114,50 @@ function mapWishlistItems(rows: WishlistQueryRow[]): WishlistItem[] {
     }));
 }
 
-export function CartProvider({ children }: { children: ReactNode }) {
-  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("guest_cart");
-      return saved ? JSON.parse(saved) : [];
+function getInitialCartItems(): CartItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    // 1. Try to find any user_cart in localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("user_cart_")) {
+        const val = localStorage.getItem(key);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      }
     }
-    return [];
-  });
+
+    // 2. Try pebric_active_cart
+    const active = localStorage.getItem("pebric_active_cart");
+    if (active) {
+      const parsed = JSON.parse(active);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+
+    // 3. Try guest_cart
+    const guest = localStorage.getItem("guest_cart");
+    if (guest) {
+      const parsed = JSON.parse(guest);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Failed to load initial cart state:", e);
+  }
+  return [];
+}
+
+export function CartProvider({ children }: { children: ReactNode }) {
+  const [cartItems, setCartItems] = useState<CartItem[]>(getInitialCartItems);
 
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
-  const { user, profile } = useAuth();
+  const { user, profile, isLoading: isAuthLoading } = useAuth();
   const [isMerged, setIsMerged] = useState(false);
   const [isCartReady, setIsCartReady] = useState(false);
+  const isHydratedRef = useRef(false);
   const abandonedCartSessionIdRef = useRef<string | null>(
     typeof window !== "undefined" ? getAbandonedCartSessionId() : null,
   );
@@ -144,102 +175,135 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const currentUserId = user?.id ?? null;
 
+  // Persist cart to localStorage only when cart is ready / hydrated to avoid wiping state on mount
   useEffect(() => {
-    if (currentUserId) {
-      localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(cartItems));
-    } else {
-      localStorage.setItem("guest_cart", JSON.stringify(cartItems));
+    if (!isCartReady && !isHydratedRef.current) {
+      return;
     }
-  }, [cartItems, currentUserId]);
+    try {
+      if (currentUserId) {
+        localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(cartItems));
+      } else {
+        localStorage.setItem("guest_cart", JSON.stringify(cartItems));
+      }
+      localStorage.setItem("pebric_active_cart", JSON.stringify(cartItems));
+    } catch (e) {
+      console.warn("Failed to save cart to localStorage:", e);
+    }
+  }, [cartItems, currentUserId, isCartReady]);
 
   useEffect(() => {
+    if (isAuthLoading) return;
+
     if (!currentUserId) {
-      const saved = localStorage.getItem("guest_cart");
-      setCartItems(saved ? JSON.parse(saved) : []);
+      const saved = localStorage.getItem("guest_cart") || localStorage.getItem("pebric_active_cart");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCartItems(parsed);
+          }
+        } catch {}
+      }
       setWishlistItems([]);
       setIsMerged(false);
       setIsCartReady(true);
+      isHydratedRef.current = true;
       return;
     }
 
     setIsCartReady(false);
 
     const syncAndLoadData = async () => {
-      const guestCartJson = localStorage.getItem("guest_cart");
-      if (guestCartJson && !isMerged) {
-        const guestItems: CartItem[] = JSON.parse(guestCartJson);
-        if (guestItems.length > 0) {
-          for (const item of guestItems) {
-            await cartService.addItem(item);
-          }
-          localStorage.removeItem("guest_cart");
-        }
-        setIsMerged(true);
-      }
-
-      const { data: cartData } = await supabase
-        .from("cart_items")
-        .select(
-          `
-          *,
-          product:products (
-            id,
-            name,
-            price,
-            image_url,
-            images,
-            slug,
-            sizes,
-            pet_sizes
-          )
-        `,
-        )
-        .eq("user_id", currentUserId);
-
-      if (cartData && cartData.length > 0) {
-        const groupedItems = cartService.groupCartItems(
-          cartData as unknown as RawCartItemRecord[],
-        );
-        setCartItems(groupedItems);
-      } else {
-        const savedUserCart = localStorage.getItem(`user_cart_${currentUserId}`);
-        if (savedUserCart) {
+      try {
+        const guestCartJson = localStorage.getItem("guest_cart");
+        if (guestCartJson && !isMerged) {
           try {
-            const parsed = JSON.parse(savedUserCart);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setCartItems((prev) => (prev.length > 0 ? prev : parsed));
+            const guestItems: CartItem[] = JSON.parse(guestCartJson);
+            if (guestItems.length > 0) {
+              for (const item of guestItems) {
+                await cartService.addItem(item);
+              }
             }
-          } catch {
-            // ignore
+          } catch {}
+          localStorage.removeItem("guest_cart");
+          setIsMerged(true);
+        }
+
+        const { data: cartData } = await supabase
+          .from("cart_items")
+          .select(
+            `
+            *,
+            product:products (
+              id,
+              name,
+              price,
+              image_url,
+              images,
+              slug,
+              sizes,
+              pet_sizes
+            )
+          `,
+          )
+          .eq("user_id", currentUserId);
+
+        if (cartData && cartData.length > 0) {
+          const groupedItems = cartService.groupCartItems(
+            cartData as unknown as RawCartItemRecord[],
+          );
+          setCartItems(groupedItems);
+          try {
+            localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(groupedItems));
+            localStorage.setItem("pebric_active_cart", JSON.stringify(groupedItems));
+          } catch {}
+        } else {
+          const savedUserCart = localStorage.getItem(`user_cart_${currentUserId}`) || localStorage.getItem("pebric_active_cart");
+          if (savedUserCart) {
+            try {
+              const parsed = JSON.parse(savedUserCart);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setCartItems((prev) => (prev.length > 0 ? prev : parsed));
+                for (const item of parsed) {
+                  cartService.addItem(item).catch(() => {});
+                }
+              }
+            } catch {
+              // ignore
+            }
           }
         }
-      }
 
-      const { data: wishlistData } = await supabase
-        .from("wishlist_items")
-        .select(
-          `
-          product:products (
-            id,
-            name,
-            price,
-            image_url,
-            slug,
-            category:categories(name)
+        const { data: wishlistData } = await supabase
+          .from("wishlist_items")
+          .select(
+            `
+            product:products (
+              id,
+              name,
+              price,
+              image_url,
+              slug,
+              category:categories(name)
+            )
+          `,
           )
-        `,
-        )
-        .eq("user_id", currentUserId);
+          .eq("user_id", currentUserId);
 
-      if (wishlistData) {
-        setWishlistItems(mapWishlistItems(wishlistData as WishlistQueryRow[]));
+        if (wishlistData) {
+          setWishlistItems(mapWishlistItems(wishlistData as WishlistQueryRow[]));
+        }
+      } catch (err) {
+        console.warn("Cart sync warning:", err);
+      } finally {
+        setIsCartReady(true);
+        isHydratedRef.current = true;
       }
     };
 
-    syncAndLoadData().finally(() => {
-      setIsCartReady(true);
-    });
-  }, [currentUserId, isMerged, cartService]);
+    syncAndLoadData();
+  }, [currentUserId, isAuthLoading, isMerged, cartService]);
 
   useEffect(() => {
     if (!isCartReady || typeof document === "undefined") return;
@@ -401,7 +465,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         )
         .eq("user_id", user.id);
 
-      if (cartData) {
+      if (cartData && cartData.length > 0) {
         const groupedItems = cartService.groupCartItems(
           cartData as unknown as RawCartItemRecord[],
         );
@@ -478,6 +542,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       } else {
         updated.push(newItem);
       }
+      try {
+        if (currentUserId) {
+          localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(updated));
+        } else {
+          localStorage.setItem("guest_cart", JSON.stringify(updated));
+        }
+        localStorage.setItem("pebric_active_cart", JSON.stringify(updated));
+      } catch {}
       return updated;
     });
 
@@ -498,14 +570,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const normalizedOwnerSize = CartItemModel.normalizeSize(ownerSize);
     const normalizedPetSize = CartItemModel.normalizeSize(petSize);
 
-    setCartItems((prev) =>
-      prev.filter(
+    setCartItems((prev) => {
+      const updated = prev.filter(
         (i) =>
           !(i.id === id &&
             i.ownerSize === normalizedOwnerSize &&
             i.petSize === normalizedPetSize)
-      )
-    );
+      );
+      try {
+        if (currentUserId) {
+          localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(updated));
+        } else {
+          localStorage.setItem("guest_cart", JSON.stringify(updated));
+        }
+        localStorage.setItem("pebric_active_cart", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
 
     if (user) {
       try {
@@ -588,8 +669,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setCartItems((prev) =>
-      prev.map((i) =>
+    setCartItems((prev) => {
+      const updated = prev.map((i) =>
         i.id === id &&
         i.ownerSize === normalizedOwnerSize &&
         i.petSize === normalizedPetSize
@@ -600,8 +681,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
               quantity: Math.max(0, ownerQuantity) + Math.max(0, petQuantity),
             }
           : i,
-      ),
-    );
+      );
+      try {
+        if (currentUserId) {
+          localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(updated));
+        } else {
+          localStorage.setItem("guest_cart", JSON.stringify(updated));
+        }
+        localStorage.setItem("pebric_active_cart", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
 
     if (user) {
       try {
@@ -620,6 +710,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = async () => {
     setCartItems([]);
+    try {
+      if (currentUserId) {
+        localStorage.removeItem(`user_cart_${currentUserId}`);
+      }
+      localStorage.removeItem("guest_cart");
+      localStorage.removeItem("pebric_active_cart");
+    } catch {}
     if (user) {
       try {
         await cartService.clearCart();
