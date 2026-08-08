@@ -142,14 +142,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [user?.id],
   );
 
-  useEffect(() => {
-    if (!user) {
-      localStorage.setItem("guest_cart", JSON.stringify(cartItems));
-    }
-  }, [cartItems, user]);
+  const currentUserId = user?.id ?? null;
 
   useEffect(() => {
-    if (!user) {
+    if (currentUserId) {
+      localStorage.setItem(`user_cart_${currentUserId}`, JSON.stringify(cartItems));
+    } else {
+      localStorage.setItem("guest_cart", JSON.stringify(cartItems));
+    }
+  }, [cartItems, currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
       const saved = localStorage.getItem("guest_cart");
       setCartItems(saved ? JSON.parse(saved) : []);
       setWishlistItems([]);
@@ -190,13 +194,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
           )
         `,
         )
-        .eq("user_id", user.id);
+        .eq("user_id", currentUserId);
 
-      if (cartData) {
+      if (cartData && cartData.length > 0) {
         const groupedItems = cartService.groupCartItems(
           cartData as unknown as RawCartItemRecord[],
         );
         setCartItems(groupedItems);
+      } else {
+        const savedUserCart = localStorage.getItem(`user_cart_${currentUserId}`);
+        if (savedUserCart) {
+          try {
+            const parsed = JSON.parse(savedUserCart);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setCartItems((prev) => (prev.length > 0 ? prev : parsed));
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
 
       const { data: wishlistData } = await supabase
@@ -213,7 +229,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           )
         `,
         )
-        .eq("user_id", user.id);
+        .eq("user_id", currentUserId);
 
       if (wishlistData) {
         setWishlistItems(mapWishlistItems(wishlistData as WishlistQueryRow[]));
@@ -223,7 +239,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     syncAndLoadData().finally(() => {
       setIsCartReady(true);
     });
-  }, [cartService, isMerged, user]);
+  }, [currentUserId, isMerged, cartService]);
 
   useEffect(() => {
     if (!isCartReady || typeof document === "undefined") return;

@@ -182,13 +182,21 @@ export function useOrders() {
           (sum, i) => sum + (i.total_price || 0),
           0,
         );
-        let subtotal = ord.subtotal && ord.subtotal > 0 ? ord.subtotal : computedItemsSubtotal;
-        const shippingCost = ord.shipping_cost ?? 0;
-        const tax = ord.tax ?? 0;
+        const subtotal = ord.subtotal && ord.subtotal > 0 ? ord.subtotal : computedItemsSubtotal;
+        const shippingCost = ord.shipping_cost !== undefined && ord.shipping_cost !== null
+          ? ord.shipping_cost
+          : (subtotal >= 100 ? 0 : 10);
+        const couponDiscount = (ord.coupon_uses && ord.coupon_uses[0]?.discount_applied) || 0;
+        const giftWrapCost = ord.gift_wrap ? (ord.gift_wrap_price || 5) : 0;
+        const taxableAmount = Math.max(0, subtotal - couponDiscount + giftWrapCost);
+        const tax = (ord.tax !== undefined && ord.tax !== null && ord.tax > 0)
+          ? ord.tax
+          : Math.round(taxableAmount * 0.08 * 100) / 100;
+        const codFee = ord.payment_method?.toLowerCase() === "cod" ? 11 : 0;
         const total =
           ord.total && ord.total > 0
             ? ord.total
-            : subtotal + shippingCost + tax;
+            : Math.round((taxableAmount + shippingCost + tax + codFee) * 100) / 100;
 
         return {
           ...ord,
@@ -405,6 +413,11 @@ export function useCreateOrder() {
           0
         );
 
+        const fallbackTax = Math.round(computedSubtotal * 0.08 * 100) / 100;
+        const fallbackShipping = computedSubtotal >= 100 ? 0 : 10;
+        const fallbackCod = input.paymentMethod === "cod" ? 11 : 0;
+        const fallbackTotal = Math.round((computedSubtotal + fallbackShipping + fallbackTax + fallbackCod) * 100) / 100;
+
         try {
           const { data: directOrder, error: directOrderErr } = await supabase
             .from("orders")
@@ -413,9 +426,9 @@ export function useCreateOrder() {
               order_number: orderNumber,
               status: "confirmed",
               subtotal: computedSubtotal,
-              shipping_cost: 0,
-              tax: 0,
-              total: computedSubtotal,
+              shipping_cost: fallbackShipping,
+              tax: fallbackTax,
+              total: fallbackTotal,
               payment_method: input.paymentMethod || "cod",
               payment_status: input.paymentStatus || "completed",
               shipping_address: input.shippingAddress as unknown as Json,
@@ -459,9 +472,9 @@ export function useCreateOrder() {
             order_number: orderNumber,
             status: "confirmed",
             subtotal: computedSubtotal,
-            shipping_cost: 0,
-            tax: 0,
-            total: computedSubtotal,
+            shipping_cost: fallbackShipping,
+            tax: fallbackTax,
+            total: fallbackTotal,
             payment_method: input.paymentMethod || "cod",
             payment_status: input.paymentStatus || "completed",
             shipping_address: input.shippingAddress as unknown as Json,

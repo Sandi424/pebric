@@ -114,36 +114,41 @@ export function useCreateSavedAddress() {
         console.warn("DB insert for saved_address failed, using metadata fallback:", e);
       }
 
-      // Fallback to metadata storage if DB table RLS policy rejected it
-      const newMetaAddr: SavedAddress = createdData || {
-        id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        user_id: user.id,
-        label: address.label || "Home",
-        full_name: address.full_name || "",
-        phone: address.phone || null,
-        address_line1: address.address_line1 || "",
-        address_line2: address.address_line2 || null,
-        city: address.city || "",
-        state: address.state || null,
-        postal_code: address.postal_code || "",
-        country: address.country || "India",
-        is_default: !!address.is_default,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // Only fall back to user_metadata storage when DB insert failed.
+      // Avoids triggering USER_UPDATED auth event which can wipe cart state.
+      if (!createdData) {
+        const newMetaAddr: SavedAddress = {
+          id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          user_id: user.id,
+          label: address.label || "Home",
+          full_name: address.full_name || "",
+          phone: address.phone || null,
+          address_line1: address.address_line1 || "",
+          address_line2: address.address_line2 || null,
+          city: address.city || "",
+          state: address.state || null,
+          postal_code: address.postal_code || "",
+          country: address.country || "India",
+          is_default: !!address.is_default,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
 
-      const existingMeta = user.user_metadata?.saved_addresses || [];
-      const updatedMeta = address.is_default
-        ? existingMeta.map((a: any) => ({ ...a, is_default: false }))
-        : existingMeta;
+        const existingMeta = user.user_metadata?.saved_addresses || [];
+        const updatedMeta = address.is_default
+          ? existingMeta.map((a: any) => ({ ...a, is_default: false }))
+          : existingMeta;
 
-      await supabase.auth.updateUser({
-        data: {
-          saved_addresses: [...updatedMeta, newMetaAddr],
-        },
-      });
+        await supabase.auth.updateUser({
+          data: {
+            saved_addresses: [...updatedMeta, newMetaAddr],
+          },
+        });
 
-      return newMetaAddr;
+        return newMetaAddr;
+      }
+
+      return createdData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["saved-addresses"] });
@@ -155,6 +160,7 @@ export function useCreateSavedAddress() {
   });
 }
 
+
 export function useUpdateSavedAddress() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -163,6 +169,7 @@ export function useUpdateSavedAddress() {
     mutationFn: async ({ id, ...updates }: Partial<SavedAddressInsert> & { id: string }) => {
       if (!user) throw new Error("Not authenticated");
       
+      let dbUpdateSucceeded = false;
       try {
         if (updates.is_default) {
           await supabase
@@ -171,31 +178,40 @@ export function useUpdateSavedAddress() {
             .eq("user_id", user.id);
         }
         
-        await supabase
+        const { error: updateError } = await supabase
           .from("saved_addresses")
           .update(updates)
           .eq("id", id);
+
+        if (!updateError) {
+          dbUpdateSucceeded = true;
+        }
       } catch (e) {
         console.warn("DB update address failed, using metadata fallback:", e);
       }
 
-      const existingMeta = user.user_metadata?.saved_addresses || [];
-      const updatedMeta = existingMeta.map((a: any) => {
-        if (a.id === id) {
-          return { ...a, ...updates, updated_at: new Date().toISOString() };
-        }
-        return updates.is_default ? { ...a, is_default: false } : a;
-      });
+      // Only update user_metadata as fallback when DB update failed.
+      // Calling supabase.auth.updateUser() emits USER_UPDATED which triggers
+      // AuthContext to create a new user object reference, which can cascade
+      // into CartContext re-querying empty cart_items from DB and wiping cart.
+      if (!dbUpdateSucceeded) {
+        const existingMeta = user.user_metadata?.saved_addresses || [];
+        const updatedMeta = existingMeta.map((a: any) => {
+          if (a.id === id) {
+            return { ...a, ...updates, updated_at: new Date().toISOString() };
+          }
+          return updates.is_default ? { ...a, is_default: false } : a;
+        });
 
-      await supabase.auth.updateUser({
-        data: {
-          saved_addresses: updatedMeta,
-        },
-      });
+        await supabase.auth.updateUser({
+          data: {
+            saved_addresses: updatedMeta,
+          },
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["saved-addresses"] });
-      toast.success("Address updated!");
     },
   });
 }
@@ -206,16 +222,22 @@ export function useDeleteSavedAddress() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      let dbDeleteSucceeded = false;
       try {
-        await supabase
+        const { error: deleteError } = await supabase
           .from("saved_addresses")
           .delete()
           .eq("id", id);
+
+        if (!deleteError) {
+          dbDeleteSucceeded = true;
+        }
       } catch (e) {
         console.warn("DB delete address failed:", e);
       }
 
-      if (user) {
+      // Only update user_metadata as fallback when DB delete failed
+      if (!dbDeleteSucceeded && user) {
         const existingMeta = user.user_metadata?.saved_addresses || [];
         const updatedMeta = existingMeta.filter((a: any) => a.id !== id);
         await supabase.auth.updateUser({

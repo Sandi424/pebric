@@ -1515,6 +1515,8 @@ function EditCheckoutAddressModal({
 
   const isSaving = updateAddress.isPending;
 
+  const isPincodeValid = status === "valid" || (form.postal_code.length === 6 && /^[1-9][0-9]{5}$/.test(form.postal_code) && !!form.city);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[500px]">
@@ -1597,6 +1599,8 @@ function EditCheckoutAddressModal({
                 value={form.city}
                 onChange={(e) => setForm({ ...form, city: e.target.value })}
                 required
+                readOnly={isPincodeValid}
+                className={isPincodeValid ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
               />
             </div>
             <div>
@@ -1606,6 +1610,8 @@ function EditCheckoutAddressModal({
                 value={form.state}
                 onChange={(e) => setForm({ ...form, state: e.target.value })}
                 required
+                readOnly={isPincodeValid}
+                className={isPincodeValid ? "bg-muted/50 text-muted-foreground cursor-not-allowed" : ""}
               />
             </div>
           </div>

@@ -100,9 +100,26 @@ export class CartService {
 
     const ownerSize = CartItemModel.normalizeSize(item.ownerSize);
     const petSize = CartItemModel.normalizeSize(item.petSize);
+    const serializedOwner = CartItemModel.serializeSize(ownerSize, item.ownerQuantity);
+    const serializedPet = CartItemModel.serializeSize(petSize, item.petQuantity);
+    const combinedQuantity = item.ownerQuantity + item.petQuantity;
 
     try {
-      // Fetch existing rows for this product
+      // 1. Try RPC first (SECURITY DEFINER bypasses RLS safely)
+      const { error: rpcError } = await supabase.rpc('add_cart_item' as any, {
+        p_product_id: item.id as string,
+        p_size: serializedOwner,
+        p_pet_size: serializedPet,
+        p_quantity: combinedQuantity,
+      });
+
+      if (!rpcError) {
+        return;
+      }
+
+      console.warn('RPC add_cart_item error, trying direct table operations:', rpcError.message);
+
+      // 2. Fetch existing rows for fallback direct table operations
       const { data: existingRows, error: fetchError } = await supabase
         .from('cart_items')
         .select('*')
@@ -129,14 +146,14 @@ export class CartService {
         const newPetQty = parsedPet.quantity + item.petQuantity;
         const newQuantity = newOwnerQty + newPetQty;
 
-        const serializedOwner = CartItemModel.serializeSize(ownerSize, newOwnerQty);
-        const serializedPet = CartItemModel.serializeSize(petSize, newPetQty);
+        const updatedOwner = CartItemModel.serializeSize(ownerSize, newOwnerQty);
+        const updatedPet = CartItemModel.serializeSize(petSize, newPetQty);
 
         const { error: updateError } = await supabase
           .from('cart_items')
           .update({
-            size: serializedOwner,
-            pet_size: serializedPet,
+            size: updatedOwner,
+            pet_size: updatedPet,
             quantity: newQuantity
           })
           .eq('id', matchedRow.id);
@@ -145,10 +162,6 @@ export class CartService {
           console.warn('Cart items update notice:', updateError.message);
         }
       } else {
-        const serializedOwner = CartItemModel.serializeSize(ownerSize, item.ownerQuantity);
-        const serializedPet = CartItemModel.serializeSize(petSize, item.petQuantity);
-        const combinedQuantity = item.ownerQuantity + item.petQuantity;
-
         const { error: insertError } = await supabase
           .from('cart_items')
           .insert({
@@ -180,27 +193,41 @@ export class CartService {
     const normalizedOwnerSize = CartItemModel.normalizeSize(ownerSize);
     const normalizedPetSize = CartItemModel.normalizeSize(petSize);
 
-    const { data: existingRows, error: fetchError } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', this.userId)
-      .eq('product_id', productId);
+    try {
+      const { error: rpcError } = await supabase.rpc('remove_cart_item' as any, {
+        p_product_id: productId as string,
+        p_size: normalizedOwnerSize,
+        p_pet_size: normalizedPetSize,
+      });
 
-    if (fetchError) throw fetchError;
+      if (!rpcError) return;
+    } catch {
+      // fallback to direct delete
+    }
 
-    const matchedRow = existingRows?.find(row => {
-      const parsedOwner = CartItemModel.deserializeSize(row.size);
-      const parsedPet = CartItemModel.deserializeSize(row.pet_size);
-      return parsedOwner.size === normalizedOwnerSize && parsedPet.size === normalizedPetSize;
-    });
-
-    if (matchedRow) {
-      const { error: deleteError } = await supabase
+    try {
+      const { data: existingRows, error: fetchError } = await supabase
         .from('cart_items')
-        .delete()
-        .eq('id', matchedRow.id);
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('product_id', productId);
 
-      if (deleteError) throw deleteError;
+      if (fetchError) return;
+
+      const matchedRow = existingRows?.find(row => {
+        const parsedOwner = CartItemModel.deserializeSize(row.size);
+        const parsedPet = CartItemModel.deserializeSize(row.pet_size);
+        return parsedOwner.size === normalizedOwnerSize && parsedPet.size === normalizedPetSize;
+      });
+
+      if (matchedRow) {
+        await supabase
+          .from('cart_items')
+          .delete()
+          .eq('id', matchedRow.id);
+      }
+    } catch (err) {
+      console.warn('Cart remove notice:', err);
     }
   }
 
@@ -226,36 +253,50 @@ export class CartService {
 
     const normalizedOwnerSize = CartItemModel.normalizeSize(ownerSize);
     const normalizedPetSize = CartItemModel.normalizeSize(petSize);
+    const serializedOwner = CartItemModel.serializeSize(normalizedOwnerSize, ownerQuantity);
+    const serializedPet = CartItemModel.serializeSize(normalizedPetSize, petQuantity);
+    const newQuantity = ownerQuantity + petQuantity;
 
-    const { data: existingRows, error: fetchError } = await supabase
-      .from('cart_items')
-      .select('*')
-      .eq('user_id', this.userId)
-      .eq('product_id', productId);
+    try {
+      const { error: rpcError } = await supabase.rpc('set_cart_item_quantity' as any, {
+        p_product_id: productId as string,
+        p_size: normalizedOwnerSize,
+        p_pet_size: normalizedPetSize,
+        p_quantity: newQuantity,
+      });
 
-    if (fetchError) throw fetchError;
+      if (!rpcError) return;
+    } catch {
+      // fallback to direct table update
+    }
 
-    const matchedRow = existingRows?.find(row => {
-      const parsedOwner = CartItemModel.deserializeSize(row.size);
-      const parsedPet = CartItemModel.deserializeSize(row.pet_size);
-      return parsedOwner.size === normalizedOwnerSize && parsedPet.size === normalizedPetSize;
-    });
-
-    if (matchedRow) {
-      const serializedOwner = CartItemModel.serializeSize(normalizedOwnerSize, ownerQuantity);
-      const serializedPet = CartItemModel.serializeSize(normalizedPetSize, petQuantity);
-      const newQuantity = ownerQuantity + petQuantity;
-
-      const { error: updateError } = await supabase
+    try {
+      const { data: existingRows, error: fetchError } = await supabase
         .from('cart_items')
-        .update({
-          size: serializedOwner,
-          pet_size: serializedPet,
-          quantity: newQuantity
-        })
-        .eq('id', matchedRow.id);
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('product_id', productId);
 
-      if (updateError) throw updateError;
+      if (fetchError) return;
+
+      const matchedRow = existingRows?.find(row => {
+        const parsedOwner = CartItemModel.deserializeSize(row.size);
+        const parsedPet = CartItemModel.deserializeSize(row.pet_size);
+        return parsedOwner.size === normalizedOwnerSize && parsedPet.size === normalizedPetSize;
+      });
+
+      if (matchedRow) {
+        await supabase
+          .from('cart_items')
+          .update({
+            size: serializedOwner,
+            pet_size: serializedPet,
+            quantity: newQuantity
+          })
+          .eq('id', matchedRow.id);
+      }
+    } catch (err) {
+      console.warn('Cart quantity update notice:', err);
     }
   }
 
