@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, X, TrendingUp, Clock, ArrowRight } from "lucide-react";
 import { useProducts } from "@/hooks/useProducts";
+import { fuzzyMatch } from "@/lib/searchUtils";
 import { cn } from "@/lib/utils";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 
@@ -42,9 +43,9 @@ export function SmartSearch({ isOpen, onClose }: SmartSearchProps) {
     ? products
         .filter(
           (p) =>
-            p.name.toLowerCase().includes(query.toLowerCase()) ||
-            p.description?.toLowerCase().includes(query.toLowerCase()) ||
-            p.category?.name.toLowerCase().includes(query.toLowerCase())
+            fuzzyMatch(query, p.name) ||
+            fuzzyMatch(query, p.description || "") ||
+            fuzzyMatch(query, p.category?.name || "")
         )
         .slice(0, 6)
     : [];

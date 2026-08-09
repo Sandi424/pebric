@@ -3,6 +3,7 @@ import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { ProductCard } from "@/components/ProductCard";
 import { useProducts, useCategories, useCollections } from "@/hooks/useProducts";
+import { fuzzyMatch } from "@/lib/searchUtils";
 import { SlidersHorizontal, X, Search, ChevronDown, ArrowUpDown, ListFilter } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { SEOHead } from "@/components/SEOHead";
@@ -56,8 +57,8 @@ export default function Shop() {
     return { min: Math.floor(Math.min(...prices)), max: Math.ceil(Math.max(...prices)) };
   }, [products]);
 
-  const petSizes = ["XS", "S", "M", "L"];
-  const ownerSizes = ["XS", "S", "M", "L"];
+  const petSizes = ["XS", "S", "M", "L", "XL", "XXL"];
+  const ownerSizes = ["XS", "S", "M", "L", "XL", "XXL"];
 
   // Sync URL params with state
   useEffect(() => {
@@ -107,15 +108,12 @@ export default function Shop() {
     const matchesCollection =
       selectedCollection === "all" || p.collection?.slug === targetSlug;
 
-    const normalizedSearchQuery = searchQuery.toLowerCase().replace(/[- ]/g, '');
-    const normalizeString = (str?: string) => str ? str.toLowerCase().replace(/[- ]/g, '') : '';
-
     const matchesSearch =
       !searchQuery.trim() ||
-      normalizeString(p.name).includes(normalizedSearchQuery) ||
-      normalizeString(p.category?.name).includes(normalizedSearchQuery) ||
-      normalizeString(p.collection?.name).includes(normalizedSearchQuery) ||
-      normalizeString(p.description).includes(normalizedSearchQuery);
+      fuzzyMatch(searchQuery, p.name) ||
+      fuzzyMatch(searchQuery, p.category?.name || "") ||
+      fuzzyMatch(searchQuery, p.collection?.name || "") ||
+      fuzzyMatch(searchQuery, p.description || "");
 
     const matchesPrice = p.price >= priceRange[0] && p.price <= priceRange[1];
 

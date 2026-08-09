@@ -300,14 +300,16 @@ export function getRecommendedSize(pet: Pet): string | null {
     if (chest < 45) return "S";
     if (chest < 55) return "M";
     if (chest < 70) return "L";
-    return "XL";
+    if (chest < 85) return "XL";
+    return "XXL";
   }
   
   if (pet.species === "cat") {
     if (chest < 30) return "XS";
     if (chest < 35) return "S";
     if (chest < 40) return "M";
-    return "L";
+    if (chest < 45) return "L";
+    return "XL";
   }
 
   return null;

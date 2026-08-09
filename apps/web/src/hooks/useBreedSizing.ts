@@ -100,12 +100,14 @@ export function getSmartSizeRecommendation(
       else if (chest < 45) size = "S";
       else if (chest < 55) size = "M";
       else if (chest < 70) size = "L";
-      else size = "XL";
+      else if (chest < 85) size = "XL";
+      else size = "XXL";
     } else if (pet.species === "cat") {
       if (chest < 30) size = "XS";
       else if (chest < 35) size = "S";
       else if (chest < 40) size = "M";
-      else size = "L";
+      else if (chest < 45) size = "L";
+      else size = "XL";
     } else {
       return null;
     }

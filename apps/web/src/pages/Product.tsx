@@ -17,6 +17,7 @@ import { useProduct, useProductsByCollection } from "@/hooks/useProducts";
 import { useProductReviewSummary } from "@/hooks/useReviews";
 import { ProductCard } from "@/components/ProductCard";
 import { SizeRecommendation } from "@/components/SizeRecommendation";
+import { SizeGuideModal } from "@/components/SizeGuideModal";
 import { ProductFabricInfo } from "@/components/ProductFabricInfo";
 import { useTrackProductView } from "@/hooks/useRecentlyViewed";
 import { useAuth } from "@/contexts/AuthContext";
@@ -215,8 +216,15 @@ export default function Product() {
         : [product?.image_url || "/product-1.jpg"],
     [product?.images, product?.image_url],
   );
-  const sizes = product?.sizes || ["XS", "S", "M", "L", "XL"];
-  const petSizes = product?.pet_sizes || ["XS", "S", "M", "L"];
+  const rawSizes = product?.sizes || ["XS", "S", "M", "L", "XL"];
+  const sizes = [...rawSizes];
+  if (sizes.includes("XL") && !sizes.includes("XXL")) sizes.push("XXL");
+
+  const rawPetSizes = product?.pet_sizes || ["XS", "S", "M", "L"];
+  const petSizes = [...rawPetSizes];
+  if (petSizes.includes("L") && !petSizes.includes("XL")) petSizes.push("XL");
+  if (petSizes.includes("XL") && !petSizes.includes("XXL")) petSizes.push("XXL");
+  
   const features = product?.features || [
     "Premium quality materials",
     "Matching design for you and your pet",
@@ -535,9 +543,16 @@ export default function Product() {
             <div className="space-y-6 md:space-y-8">
               {/* Parent Section */}
               <div className="space-y-3">
-                <label className="block font-body text-xs uppercase tracking-[0.2em] text-foreground">
-                  Your Size
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-body text-xs uppercase tracking-[0.2em] text-foreground">
+                    Your Size
+                  </label>
+                  <SizeGuideModal hasHumanSizes={sizes.length > 0} hasPetSizes={petSizes.length > 0}>
+                    <button className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                      Size Guide
+                    </button>
+                  </SizeGuideModal>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {sizes.map((size) => (
                     <button

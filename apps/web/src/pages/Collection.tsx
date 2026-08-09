@@ -52,8 +52,8 @@ export default function Collection() {
   const [mobileSortOpen, setMobileSortOpen] = useState(false);
 
   const { data: categories = [] } = useCategories();
-  const petSizes = ["XS", "S", "M", "L"];
-  const ownerSizes = ["XS", "S", "M", "L"];
+  const petSizes = ["XS", "S", "M", "L", "XL", "XXL"];
+  const ownerSizes = ["XS", "S", "M", "L", "XL", "XXL"];
 
   // Fallback images
   const fallbackImages: Record<string, string> = {
