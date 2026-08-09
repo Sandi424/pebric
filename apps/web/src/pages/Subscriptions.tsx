@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSubscriptions, useCancelSubscription } from "@/hooks/useSubscriptions";
+import { useSubscriptions, useCancelSubscription, useUpdateSubscription } from "@/hooks/useSubscriptions";
 import { useProducts } from "@/hooks/useProducts";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ export default function Subscriptions() {
   const { data: subscriptions = [], isLoading } = useSubscriptions();
   const { data: products = [] } = useProducts();
   const cancelSubscription = useCancelSubscription();
+  const updateSubscription = useUpdateSubscription();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -72,7 +73,9 @@ export default function Subscriptions() {
         ) : (
           <div className="space-y-4">
             {subscriptions.map((subscription) => {
-              const product = getProduct(subscription.product_id);
+              const product = subscription.product || getProduct(subscription.product_id);
+              const discountRate = subscription.frequency === 'weekly' ? 0.15 : subscription.frequency === 'biweekly' ? 0.10 : 0.05;
+              const subPrice = product?.price ? Math.round(product.price * (1 - discountRate)) : null;
               
               return (
                 <div key={subscription.id} className="rounded-lg border border-border bg-card p-6">
@@ -95,6 +98,17 @@ export default function Subscriptions() {
                             {subscription.size && ` • Size: ${subscription.size}`}
                             {subscription.pet_size && ` • Pet: ${subscription.pet_size}`}
                           </p>
+                          {subPrice && (
+                            <p className="text-sm font-semibold mt-1">
+                              ₹{subPrice * subscription.quantity}
+                              <span className="text-xs text-muted-foreground line-through ml-2">
+                                ₹{(product?.price || 0) * subscription.quantity}
+                              </span>
+                              <span className="text-xs text-green-600 font-normal ml-2">
+                                ({Math.round(discountRate * 100)}% off)
+                              </span>
+                            </p>
+                          )}
                         </div>
                         <Badge className={getStatusColor(subscription.status)}>
                           {subscription.status}
@@ -104,13 +118,18 @@ export default function Subscriptions() {
                       <div className="mt-3 flex items-center gap-4">
                         <div className="flex items-center gap-2 text-sm">
                           <Package className="h-4 w-4 text-muted-foreground" />
-                          <span>Next delivery: {format(new Date(subscription.next_delivery_date), 'MMM d, yyyy')}</span>
+                          <span>Next delivery: {subscription.next_delivery_date ? format(new Date(subscription.next_delivery_date), 'MMM d, yyyy') : "Scheduled"}</span>
                         </div>
                       </div>
 
                       {subscription.status === 'active' && (
                         <div className="mt-4 flex gap-2">
-                          <Button variant="outline" size="sm">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => updateSubscription.mutate({ subscriptionId: subscription.id, status: 'paused' })}
+                            disabled={updateSubscription.isPending}
+                          >
                             <Pause className="mr-2 h-4 w-4" />
                             Pause
                           </Button>
@@ -118,6 +137,7 @@ export default function Subscriptions() {
                             variant="outline" 
                             size="sm"
                             onClick={() => cancelSubscription.mutate(subscription.id)}
+                            disabled={cancelSubscription.isPending}
                           >
                             <X className="mr-2 h-4 w-4" />
                             Cancel
@@ -127,7 +147,12 @@ export default function Subscriptions() {
 
                       {subscription.status === 'paused' && (
                         <div className="mt-4">
-                          <Button variant="outline" size="sm">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => updateSubscription.mutate({ subscriptionId: subscription.id, status: 'active' })}
+                            disabled={updateSubscription.isPending}
+                          >
                             <Play className="mr-2 h-4 w-4" />
                             Resume
                           </Button>

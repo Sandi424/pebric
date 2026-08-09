@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+import type { Product } from "@/hooks/useProducts";
+
 export interface Subscription {
   id: string;
   user_id: string;
@@ -16,6 +18,7 @@ export interface Subscription {
   last_order_id: string | null;
   created_at: string;
   updated_at: string;
+  product?: Product | null;
 }
 
 export function useSubscriptions() {
@@ -28,7 +31,10 @@ export function useSubscriptions() {
       
       const { data, error } = await supabase
         .from("subscriptions")
-        .select("*")
+        .select(`
+          *,
+          product:products(*)
+        `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -58,8 +64,8 @@ export function useCreateSubscription() {
       productId: string;
       frequency: string;
       quantity?: number;
-      size?: string;
-      petSize?: string;
+      size?: string | null;
+      petSize?: string | null;
     }) => {
       if (!user) throw new Error("Not authenticated");
 
@@ -78,24 +84,28 @@ export function useCreateSubscription() {
           break;
       }
 
+      const cleanSize = size && size !== "N/A" ? size : null;
+      const cleanPetSize = petSize && petSize !== "N/A" ? petSize : null;
+
       const insertPayload = {
-          user_id: user.id,
-          product_id: productId,
-          frequency,
-          quantity: quantity || 1,
-          size: size || null,
-          pet_size: petSize || null,
-          next_delivery_date: nextDate.toISOString().split('T')[0],
-        };
-      console.log("[useCreateSubscription] INSERT payload:", JSON.stringify(insertPayload));
+        user_id: user.id,
+        product_id: productId,
+        frequency,
+        quantity: quantity || 1,
+        size: cleanSize,
+        pet_size: cleanPetSize,
+        next_delivery_date: nextDate.toISOString().split('T')[0],
+      };
 
       const { data, error } = await supabase
         .from("subscriptions")
         .insert(insertPayload)
-        .select()
+        .select(`
+          *,
+          product:products(*)
+        `)
         .single();
 
-      console.log("[useCreateSubscription] Supabase response:", { data, error });
       if (error) throw error;
       return data;
     },

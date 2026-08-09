@@ -5,7 +5,7 @@ import {
   type Query,
 } from "@tanstack/react-query";
 
-const QUERY_CACHE_STORAGE_KEY = "pebric-query-cache-v3";
+const QUERY_CACHE_STORAGE_KEY = "pebric-query-cache-v4";
 const QUERY_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 export const CATALOG_STALE_TIME = 30 * 60 * 1000;
@@ -29,6 +29,11 @@ export const REVIEW_SUMMARY_QUERY_OPTIONS = {
 
 function shouldPersistQuery(query: Query) {
   if (query.state.status !== "success" || query.state.data === undefined) {
+    return false;
+  }
+
+  // Never persist empty arrays for catalog items (products, collections, etc.)
+  if (Array.isArray(query.state.data) && query.state.data.length === 0) {
     return false;
   }
 
@@ -61,6 +66,11 @@ function loadPersistedCatalogState() {
   }
 
   try {
+    // Clean up legacy cache versions
+    ["pebric-query-cache-v1", "pebric-query-cache-v2", "pebric-query-cache-v3"].forEach((key) => {
+      try { window.localStorage.removeItem(key); } catch {}
+    });
+
     const raw = window.localStorage.getItem(QUERY_CACHE_STORAGE_KEY);
 
     if (!raw) {

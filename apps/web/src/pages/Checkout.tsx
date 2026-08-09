@@ -653,23 +653,21 @@ export default function Checkout() {
 
     if (order) {
       const activeCheckoutItems = options?.originalCheckoutItems || checkoutItems;
-      console.log("[Subscription Debug] activeCheckoutItems:", JSON.stringify(activeCheckoutItems.map((i: any) => ({ id: i.id, name: i.name, isSubscription: i.isSubscription, frequency: i.frequency }))));
       const subscriptionItems = activeCheckoutItems.filter((item: any) => item.isSubscription);
-      console.log("[Subscription Debug] Found subscription items:", subscriptionItems.length);
       for (const item of subscriptionItems) {
+        const cleanSize = (item.ownerSize && item.ownerSize !== "N/A") ? item.ownerSize : ((item as any).size && (item as any).size !== "N/A" ? (item as any).size : null);
+        const cleanPetSize = (item.petSize && item.petSize !== "N/A") ? item.petSize : null;
         const payload = {
           productId: item.id.toString(),
           frequency: (item as any).frequency || 'monthly',
           quantity: item.quantity || 1,
-          size: item.ownerSize,
-          petSize: item.petSize,
+          size: cleanSize,
+          petSize: cleanPetSize,
         };
-        console.log("[Subscription Debug] Creating subscription with payload:", JSON.stringify(payload));
         try {
-          const result = await createSubscription.mutateAsync(payload);
-          console.log("[Subscription Debug] Subscription created successfully:", result);
+          await createSubscription.mutateAsync(payload);
         } catch (e: any) {
-          console.error("[Subscription Debug] Failed to create subscription:", e);
+          console.error("Failed to create subscription:", e);
           const errorMsg = e?.message || "Unknown error";
           toast.error("Subscription could not be saved", {
             description: errorMsg.includes("row-level security")

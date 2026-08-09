@@ -41,7 +41,6 @@ export default function Shop() {
   );
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [mobileSortOpen, setMobileSortOpen] = useState(false);
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 500]);
   const [selectedPetSize, setSelectedPetSize] = useState<string>("all");
   const [selectedOwnerSize, setSelectedOwnerSize] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -49,13 +48,6 @@ export default function Shop() {
   const { data: products = [], isLoading } = useProducts();
   const { data: categories = [] } = useCategories();
   const { data: collections = [] } = useCollections();
-
-  // Calculate price bounds
-  const priceBounds = useMemo(() => {
-    if (products.length === 0) return { min: 0, max: 500 };
-    const prices = products.map(p => p.price);
-    return { min: Math.floor(Math.min(...prices)), max: Math.ceil(Math.max(...prices)) };
-  }, [products]);
 
   const petSizes = ["XS", "S", "M", "L", "XL", "XXL"];
   const ownerSizes = ["XS", "S", "M", "L", "XL", "XXL"];
@@ -79,13 +71,6 @@ export default function Shop() {
     if (sort) setSortBy(sort);
     if (search !== null) setSearchQuery(search);
   }, [searchParams, navigate]);
-
-  // Update price range when products load
-  useEffect(() => {
-    if (products.length > 0 && priceRange[0] === 0 && priceRange[1] === 500) {
-      setPriceRange([priceBounds.min, priceBounds.max]);
-    }
-  }, [priceBounds, products.length, priceRange]);
 
   const filteredProductsWithScore = products.map(p => ({
     product: p,
@@ -115,8 +100,6 @@ export default function Shop() {
 
     const matchesSearch = !searchQuery.trim() || score > 0;
 
-    const matchesPrice = p.price >= priceRange[0] && p.price <= priceRange[1];
-
     const matchesPetSize = selectedPetSize === "all" ||
       (p.pet_sizes && p.pet_sizes.includes(selectedPetSize));
 
@@ -126,7 +109,7 @@ export default function Shop() {
     const matchesCategory = selectedCategory === "all" ||
       p.category?.id === selectedCategory;
 
-    return matchesCollection && matchesSearch && matchesPrice && matchesPetSize && matchesOwnerSize && matchesCategory;
+    return matchesCollection && matchesSearch && matchesPetSize && matchesOwnerSize && matchesCategory;
   });
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {

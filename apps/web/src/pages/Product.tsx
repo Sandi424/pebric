@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Minus,
   Plus,
@@ -164,6 +164,7 @@ function ProductDetailSkeleton() {
 
 export default function Product() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
   const { data: product, isLoading } = useProduct(slug || "");
   const navigate = useNavigate();
   const [loadSecondaryContent, setLoadSecondaryContent] = useState(false);
@@ -692,6 +693,7 @@ export default function Product() {
                   selectedPetSize={selectedPetSize}
                   parentQuantity={parentQuantity}
                   petQuantity={petQuantity}
+                  defaultOpen={searchParams.get("subscribe") === "true"}
                 />
               </div>
             </div>

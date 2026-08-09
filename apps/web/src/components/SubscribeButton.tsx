@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,13 +9,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { RefreshCw, Check } from "lucide-react";
 
 interface SubscribeButtonProps {
@@ -25,6 +18,7 @@ interface SubscribeButtonProps {
   selectedPetSize?: string;
   parentQuantity: number;
   petQuantity: number;
+  defaultOpen?: boolean;
 }
 
 const frequencies = [
@@ -39,11 +33,18 @@ export function SubscribeButton({
   selectedSize, 
   selectedPetSize,
   parentQuantity,
-  petQuantity
+  petQuantity,
+  defaultOpen = false,
 }: SubscribeButtonProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [frequency, setFrequency] = useState("monthly");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (defaultOpen) {
+      setIsOpen(true);
+    }
+  }, [defaultOpen]);
 
   const selectedFreq = frequencies.find(f => f.value === frequency);
   const discount = frequency === 'weekly' ? 0.15 : frequency === 'biweekly' ? 0.10 : 0.05;
@@ -52,6 +53,7 @@ export function SubscribeButton({
   const isMatchingSet = product.sizes && product.sizes.length > 0 && product.pet_sizes && product.pet_sizes.length > 0;
 
   const handleSubscribe = () => {
+    const totalQty = (selectedSize ? parentQuantity : 0) + (selectedPetSize ? petQuantity : 0) || 1;
     navigate("/checkout", {
       state: {
         buyNowItems: [{
@@ -62,7 +64,7 @@ export function SubscribeButton({
           ownerSize: selectedSize || "N/A",
           petSize: selectedPetSize || "N/A",
           slug: product.slug,
-          quantity: (selectedSize ? parentQuantity : 0) + (selectedPetSize ? petQuantity : 0),
+          quantity: totalQty,
           ownerQuantity: selectedSize ? parentQuantity : 0,
           petQuantity: selectedPetSize ? petQuantity : 0,
           type: isMatchingSet ? "combo" : "owner",

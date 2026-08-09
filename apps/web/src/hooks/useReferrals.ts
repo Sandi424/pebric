@@ -33,6 +33,8 @@ export function useReferralCode() {
         .from("referral_codes")
         .select("*")
         .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
@@ -50,6 +52,19 @@ export function useCreateReferralCode() {
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       
+      // Check if user already has a referral code
+      const { data: existing } = await supabase
+        .from("referral_codes")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        return existing as ReferralCode;
+      }
+      
       // Generate unique code
       const code = `PAWFRIEND${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       
@@ -63,7 +78,7 @@ export function useCreateReferralCode() {
         .single();
 
       if (error) throw error;
-      return data;
+      return data as ReferralCode;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["referral-code"] });
