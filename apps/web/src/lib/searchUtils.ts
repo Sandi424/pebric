@@ -60,3 +60,67 @@ export function fuzzyMatch(query: string, text: string, maxDistance: number = 2)
     });
   });
 }
+
+// Function to calculate relevance score for a product based on query
+export function calculateRelevanceScore(query: string, product: any): number {
+  if (!query || !product) return 0;
+  
+  const queryLower = query.toLowerCase().trim();
+  let score = 0;
+
+  // Exact matches
+  const nameExact = product.name.toLowerCase();
+  if (nameExact === queryLower) score += 100;
+  else if (nameExact.includes(queryLower)) score += 50;
+
+  // Extract query words
+  const queryWords = queryLower.split(/[- ]+/).filter((w: string) => w.length > 2);
+  if (queryWords.length === 0) {
+     // For very short queries (1-2 chars), do simple includes check on name
+     if (nameExact.includes(queryLower)) return 20;
+     return 0;
+  }
+
+  // Build searchable text fields
+  const searchFields = [
+    { text: product.name, weight: 10 },
+    { text: product.category?.name || '', weight: 5 },
+    { text: product.collection?.name || '', weight: 4 },
+    { text: product.description || '', weight: 2 },
+  ];
+  
+  // Add tags / features / sizes
+  if (product.features) {
+    searchFields.push({ text: product.features.join(' '), weight: 3 });
+  }
+  if (product.pet_sizes) {
+    searchFields.push({ text: product.pet_sizes.join(' '), weight: 3 });
+  }
+
+  // Word-by-word fuzzy match
+  queryWords.forEach((qWord: string) => {
+    let wordScore = 0;
+    searchFields.forEach(field => {
+      if (!field.text) return;
+      const textWords = field.text.toLowerCase().split(/[- ]+/);
+      
+      for (const tWord of textWords) {
+        if (tWord === qWord) {
+          wordScore = Math.max(wordScore, field.weight * 2);
+        } else if (tWord.startsWith(qWord)) {
+          wordScore = Math.max(wordScore, field.weight * 1.5);
+        } else if (qWord.length >= 3 && tWord.length >= 3) {
+          // Check typo tolerance for words
+          const distance = levenshteinDistance(qWord, tWord);
+          const threshold = qWord.length <= 4 ? 1 : 2;
+          if (distance <= threshold) {
+             wordScore = Math.max(wordScore, field.weight * (1 - distance * 0.3));
+          }
+        }
+      }
+    });
+    score += wordScore;
+  });
+
+  return score;
+}

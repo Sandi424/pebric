@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, X, TrendingUp, Clock, ArrowRight } from "lucide-react";
 import { useProducts } from "@/hooks/useProducts";
-import { fuzzyMatch } from "@/lib/searchUtils";
+import { calculateRelevanceScore } from "@/lib/searchUtils";
 import { cn } from "@/lib/utils";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 
@@ -39,16 +39,29 @@ export function SmartSearch({ isOpen, onClose }: SmartSearchProps) {
     };
   }, [isOpen]);
 
-  const filteredProducts = query.trim()
+  const searchResults = query.trim()
     ? products
-        .filter(
-          (p) =>
-            fuzzyMatch(query, p.name) ||
-            fuzzyMatch(query, p.description || "") ||
-            fuzzyMatch(query, p.category?.name || "")
-        )
-        .slice(0, 6)
+        .map(p => ({ product: p, score: calculateRelevanceScore(query, p) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
     : [];
+    
+  const filteredProducts = searchResults.map(item => item.product).slice(0, 6);
+
+  // Auto-suggestion for typos or categories based on best match
+  let suggestion = "";
+  if (query.trim() && searchResults.length > 0) {
+    const bestMatch = searchResults[0].product;
+    if (searchResults[0].score > 0 && searchResults[0].score < 100) {
+      // If it's not a perfect exact match, suggest the exact category or best matching word
+      const queryLower = query.toLowerCase().trim();
+      if (bestMatch.category?.name && bestMatch.category.name.toLowerCase().includes(queryLower.substring(0, 3))) {
+         suggestion = bestMatch.category.name;
+      } else {
+         suggestion = bestMatch.name.split(' ')[0]; // Just a heuristic
+      }
+    }
+  }
 
   const handleSearch = (searchQuery: string) => {
     if (!searchQuery.trim()) return;
@@ -177,6 +190,19 @@ export function SmartSearch({ isOpen, onClose }: SmartSearchProps) {
                 <h3 className="mb-4 font-body text-sm uppercase tracking-wider text-muted-foreground">
                   {filteredProducts.length > 0 ? `${filteredProducts.length} Products Found` : "No Results"}
                 </h3>
+                
+                {suggestion && suggestion.toLowerCase() !== query.toLowerCase() && (
+                  <div className="mb-4 text-sm">
+                    <span className="text-muted-foreground">Did you mean: </span>
+                    <button 
+                      onClick={() => setQuery(suggestion)}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {suggestion}
+                    </button>?
+                  </div>
+                )}
+                
                 <div className="space-y-4">
                   {filteredProducts.map((product) => (
                     <button

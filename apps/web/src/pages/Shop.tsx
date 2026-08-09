@@ -3,7 +3,7 @@ import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { PageLayout } from "@/components/layouts/PageLayout";
 import { ProductCard } from "@/components/ProductCard";
 import { useProducts, useCategories, useCollections } from "@/hooks/useProducts";
-import { fuzzyMatch } from "@/lib/searchUtils";
+import { calculateRelevanceScore } from "@/lib/searchUtils";
 import { SlidersHorizontal, X, Search, ChevronDown, ArrowUpDown, ListFilter } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { SEOHead } from "@/components/SEOHead";
@@ -87,7 +87,12 @@ export default function Shop() {
     }
   }, [priceBounds, products.length, priceRange]);
 
-  const filteredProducts = products.filter((p) => {
+  const filteredProductsWithScore = products.map(p => ({
+    product: p,
+    score: searchQuery.trim() ? calculateRelevanceScore(searchQuery, p) : 1
+  }));
+
+  const filteredProducts = filteredProductsWithScore.filter(({ product: p, score }) => {
     // Map common frontend route slugs to actual database slugs
     const slugAliasMap: Record<string, string> = {
       "summer": "summer-vibes",
@@ -108,12 +113,7 @@ export default function Shop() {
     const matchesCollection =
       selectedCollection === "all" || p.collection?.slug === targetSlug;
 
-    const matchesSearch =
-      !searchQuery.trim() ||
-      fuzzyMatch(searchQuery, p.name) ||
-      fuzzyMatch(searchQuery, p.category?.name || "") ||
-      fuzzyMatch(searchQuery, p.collection?.name || "") ||
-      fuzzyMatch(searchQuery, p.description || "");
+    const matchesSearch = !searchQuery.trim() || score > 0;
 
     const matchesPrice = p.price >= priceRange[0] && p.price <= priceRange[1];
 
@@ -130,17 +130,20 @@ export default function Shop() {
   });
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (searchQuery.trim() && sortBy === "featured") {
+       return b.score - a.score;
+    }
     switch (sortBy) {
       case "price-low":
-        return a.price - b.price;
+        return a.product.price - b.product.price;
       case "price-high":
-        return b.price - a.price;
+        return b.product.price - a.product.price;
       case "newest":
-        return (b.is_new_arrival ? 1 : 0) - (a.is_new_arrival ? 1 : 0);
+        return (b.product.is_new_arrival ? 1 : 0) - (a.product.is_new_arrival ? 1 : 0);
       default:
-        return (b.is_best_seller ? 1 : 0) - (a.is_best_seller ? 1 : 0);
+        return (b.product.is_best_seller ? 1 : 0) - (a.product.is_best_seller ? 1 : 0);
     }
-  });
+  }).map(item => item.product);
 
   const handleCollectionChange = (col: string) => {
     setSelectedCollection(col);

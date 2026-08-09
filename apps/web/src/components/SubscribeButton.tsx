@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCreateSubscription } from "@/hooks/useSubscriptions";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,11 +19,12 @@ import {
 import { RefreshCw, Check } from "lucide-react";
 
 interface SubscribeButtonProps {
-  productId: string;
-  productName: string;
-  price: number;
+  product: any;
+  dynamicTotalPrice: number;
   selectedSize?: string;
   selectedPetSize?: string;
+  parentQuantity: number;
+  petQuantity: number;
 }
 
 const frequencies = [
@@ -33,28 +34,42 @@ const frequencies = [
 ];
 
 export function SubscribeButton({ 
-  productId, 
-  productName, 
-  price, 
+  product, 
+  dynamicTotalPrice, 
   selectedSize, 
-  selectedPetSize 
+  selectedPetSize,
+  parentQuantity,
+  petQuantity
 }: SubscribeButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [frequency, setFrequency] = useState("monthly");
-  const [quantity, setQuantity] = useState(1);
-  const createSubscription = useCreateSubscription();
+  const navigate = useNavigate();
 
   const selectedFreq = frequencies.find(f => f.value === frequency);
   const discount = frequency === 'weekly' ? 0.15 : frequency === 'biweekly' ? 0.10 : 0.05;
-  const discountedPrice = price * (1 - discount);
+  const discountedTotalPrice = dynamicTotalPrice * (1 - discount);
+  
+  const isMatchingSet = product.sizes && product.sizes.length > 0 && product.pet_sizes && product.pet_sizes.length > 0;
 
-  const handleSubscribe = async () => {
-    await createSubscription.mutateAsync({
-      productId,
-      frequency,
-      quantity,
-      size: selectedSize,
-      petSize: selectedPetSize,
+  const handleSubscribe = () => {
+    navigate("/checkout", {
+      state: {
+        buyNowItems: [{
+          id: product.id,
+          name: product.name,
+          price: product.price * (1 - discount),
+          image: product.image_url || "/product-1.jpg",
+          ownerSize: selectedSize || "N/A",
+          petSize: selectedPetSize || "N/A",
+          slug: product.slug,
+          quantity: (selectedSize ? parentQuantity : 0) + (selectedPetSize ? petQuantity : 0),
+          ownerQuantity: selectedSize ? parentQuantity : 0,
+          petQuantity: selectedPetSize ? petQuantity : 0,
+          type: isMatchingSet ? "combo" : "owner",
+          isSubscription: true,
+          frequency
+        }]
+      }
     });
     setIsOpen(false);
   };
@@ -74,13 +89,18 @@ export function SubscribeButton({
         
         <div className="space-y-6 py-4">
           <div className="bg-muted/50 p-4 rounded-lg">
-            <p className="font-medium">{productName}</p>
+            <p className="font-medium">{product.name}</p>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-lg font-bold">${discountedPrice.toFixed(2)}</span>
-              <span className="text-sm text-muted-foreground line-through">${price.toFixed(2)}</span>
+              <span className="text-lg font-bold">₹{discountedTotalPrice.toFixed(2)}</span>
+              <span className="text-sm text-muted-foreground line-through">₹{dynamicTotalPrice.toFixed(2)}</span>
               <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
                 {selectedFreq?.discount}
               </span>
+            </div>
+            <div className="text-xs text-muted-foreground mt-2">
+              {selectedSize && <span>Owner Size: {selectedSize} (x{parentQuantity})</span>}
+              {selectedSize && selectedPetSize && <span className="mx-2">•</span>}
+              {selectedPetSize && <span>Pet Size: {selectedPetSize} (x{petQuantity})</span>}
             </div>
           </div>
 
@@ -111,24 +131,10 @@ export function SubscribeButton({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Quantity</Label>
-            <Select value={quantity.toString()} onValueChange={(v) => setQuantity(parseInt(v))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[1, 2, 3, 4, 5].map((q) => (
-                  <SelectItem key={q} value={q.toString()}>{q}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="border-t pt-4">
             <div className="flex justify-between text-sm mb-1">
               <span>Per delivery</span>
-              <span>${(discountedPrice * quantity).toFixed(2)}</span>
+              <span>₹{discountedTotalPrice.toFixed(2)}</span>
             </div>
             <p className="text-xs text-muted-foreground">
               Cancel anytime. Next delivery will be scheduled based on your frequency.
@@ -138,9 +144,8 @@ export function SubscribeButton({
           <Button 
             onClick={handleSubscribe} 
             className="w-full" 
-            disabled={createSubscription.isPending}
           >
-            {createSubscription.isPending ? "Setting up..." : "Start Subscription"}
+            Start Subscription
           </Button>
         </div>
       </DialogContent>

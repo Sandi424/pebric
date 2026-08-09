@@ -10,6 +10,7 @@ import { RefreshCw, Pause, Play, X, Package } from "lucide-react";
 import { format } from "date-fns";
 import { SEOHead } from "@/components/SEOHead";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { AddSubscriptionModal } from "@/components/AddSubscriptionModal";
 
 export default function Subscriptions() {
   const navigate = useNavigate();
@@ -51,15 +52,12 @@ export default function Subscriptions() {
     <PageLayout showNewsletter={false}>
       <SEOHead title="My Subscriptions" description="Manage your recurring Pebric deliveries." noindex={true} />
       <div className="container mx-auto px-6 py-16">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="font-display text-4xl font-medium">My Subscriptions</h1>
             <p className="text-muted-foreground mt-1">Manage your recurring deliveries</p>
           </div>
-          <Button onClick={() => navigate("/shop")} variant="outline">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Add Subscription
-          </Button>
+          <AddSubscriptionModal />
         </div>
 
         {subscriptions.length === 0 ? (

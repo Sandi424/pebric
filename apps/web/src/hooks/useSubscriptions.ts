@@ -32,10 +32,14 @@ export function useSubscriptions() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Failed to fetch subscriptions:", error.message, error);
+        throw error;
+      }
       return data as Subscription[];
     },
     enabled: !!user,
+    retry: 1,
   });
 }
 
@@ -74,9 +78,7 @@ export function useCreateSubscription() {
           break;
       }
 
-      const { data, error } = await supabase
-        .from("subscriptions")
-        .insert({
+      const insertPayload = {
           user_id: user.id,
           product_id: productId,
           frequency,
@@ -84,10 +86,16 @@ export function useCreateSubscription() {
           size: size || null,
           pet_size: petSize || null,
           next_delivery_date: nextDate.toISOString().split('T')[0],
-        })
+        };
+      console.log("[useCreateSubscription] INSERT payload:", JSON.stringify(insertPayload));
+
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .insert(insertPayload)
         .select()
         .single();
 
+      console.log("[useCreateSubscription] Supabase response:", { data, error });
       if (error) throw error;
       return data;
     },
@@ -97,8 +105,13 @@ export function useCreateSubscription() {
         description: "You'll receive automatic deliveries.",
       });
     },
-    onError: () => {
-      toast.error("Failed to create subscription");
+    onError: (error: any) => {
+      const msg = error?.message || "Unknown error";
+      toast.error("Failed to create subscription", {
+        description: msg.includes("row-level security")
+          ? "RLS policy missing. Run fix-rls.sql in Supabase SQL Editor."
+          : msg,
+      });
     },
   });
 }

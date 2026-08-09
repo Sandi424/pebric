@@ -28,6 +28,7 @@ import {
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateOrder } from "@/hooks/useOrders";
+import { useCreateSubscription } from "@/hooks/useSubscriptions";
 import { useValidateCoupon, Coupon } from "@/hooks/useCoupons";
 import {
   PaymentMethodSelector,
@@ -327,6 +328,7 @@ export default function Checkout() {
   const { cartItems, cartTotal, clearCart } = useCart();
   const { user, profile } = useAuth();
   const createOrder = useCreateOrder();
+  const createSubscription = useCreateSubscription();
 
   const buyNowItems = location.state?.buyNowItems;
 
@@ -631,6 +633,7 @@ export default function Checkout() {
       clearUserCart?: boolean;
       couponId?: string;
       idempotencyKey?: string;
+      originalCheckoutItems?: any[];
     },
   ) => {
     const order = await createOrder.mutateAsync({
@@ -647,6 +650,35 @@ export default function Checkout() {
       couponId: options?.couponId || appliedCoupon?.id,
       idempotencyKey: options?.idempotencyKey,
     });
+
+    if (order) {
+      const activeCheckoutItems = options?.originalCheckoutItems || checkoutItems;
+      console.log("[Subscription Debug] activeCheckoutItems:", JSON.stringify(activeCheckoutItems.map((i: any) => ({ id: i.id, name: i.name, isSubscription: i.isSubscription, frequency: i.frequency }))));
+      const subscriptionItems = activeCheckoutItems.filter((item: any) => item.isSubscription);
+      console.log("[Subscription Debug] Found subscription items:", subscriptionItems.length);
+      for (const item of subscriptionItems) {
+        const payload = {
+          productId: item.id.toString(),
+          frequency: (item as any).frequency || 'monthly',
+          quantity: item.quantity || 1,
+          size: item.ownerSize,
+          petSize: item.petSize,
+        };
+        console.log("[Subscription Debug] Creating subscription with payload:", JSON.stringify(payload));
+        try {
+          const result = await createSubscription.mutateAsync(payload);
+          console.log("[Subscription Debug] Subscription created successfully:", result);
+        } catch (e: any) {
+          console.error("[Subscription Debug] Failed to create subscription:", e);
+          const errorMsg = e?.message || "Unknown error";
+          toast.error("Subscription could not be saved", {
+            description: errorMsg.includes("row-level security")
+              ? "Database permissions issue. Please ask the admin to run fix-rls.sql in Supabase SQL Editor."
+              : errorMsg,
+          });
+        }
+      }
+    }
 
     if (
       order &&
@@ -787,6 +819,7 @@ export default function Checkout() {
           ),
           couponId: snapshot.coupon?.id || undefined,
           idempotencyKey: snapshot.idempotencyKey,
+          originalCheckoutItems: (snapshot.buyNowItems && snapshot.buyNowItems.length > 0) ? snapshot.buyNowItems : snapshot.items,
         });
 
         // Clean up sessionStorage

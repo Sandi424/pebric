@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Award, Dog, Heart, LogOut, ShoppingBag, Truck, User } from "lucide-react";
+import { Award, Dog, Heart, LogOut, ShoppingBag, Truck, User, Search } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
+import { SmartSearch } from "@/components/SmartSearch";
 
 const navLinks = [
   { name: "Home", href: "/" },
@@ -22,6 +22,7 @@ const navLinks = [
 
 export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { cartCount, wishlistItems } = useCart();
@@ -150,6 +151,14 @@ export function Header() {
               )}
 
               <button 
+                onClick={() => setIsSearchOpen(true)}
+                className="relative text-foreground transition-colors hover:text-foreground/70" 
+                aria-label="Search"
+              >
+                <Search className="h-5 w-5" />
+              </button>
+
+              <button 
                 onClick={() => navigate("/wishlist")}
                 className="relative text-foreground transition-colors hover:text-foreground/70" 
                 aria-label="Wishlist"
@@ -175,6 +184,7 @@ export function Header() {
           </div>
         </div>
       </header>
+      <SmartSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
       <MobileBottomNav />
     </>
   );

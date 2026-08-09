@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { SEOHead } from "@/components/SEOHead";
 import { useCompare } from "@/hooks/useCompare";
 import { ProductImageGallery } from "@/components/ProductImageGallery";
+import { SubscribeButton } from "@/components/SubscribeButton";
 
 
 const ProductReviews = lazy(() =>
@@ -682,6 +683,16 @@ export default function Product() {
                 >
                   Buy Now
                 </Button>
+              </div>
+              <div className="mt-1">
+                <SubscribeButton
+                  product={product}
+                  dynamicTotalPrice={dynamicTotalPrice}
+                  selectedSize={selectedSize}
+                  selectedPetSize={selectedPetSize}
+                  parentQuantity={parentQuantity}
+                  petQuantity={petQuantity}
+                />
               </div>
             </div>
           </div>
