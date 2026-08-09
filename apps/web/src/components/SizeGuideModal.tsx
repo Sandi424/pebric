@@ -17,8 +17,8 @@ export function SizeGuideModal({ hasHumanSizes, hasPetSizes, children }: SizeGui
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 font-body gap-0 rounded-xl">
-        <DialogHeader className="p-6 pb-4 border-b border-border/40 sticky top-0 bg-background z-10">
+      <DialogContent className="max-w-2xl w-[95vw] sm:w-full max-h-[80dvh] md:max-h-[90vh] overflow-hidden flex flex-col p-0 font-body gap-0 rounded-xl">
+        <DialogHeader className="p-5 md:p-6 pb-4 border-b border-border/40 shrink-0 bg-background z-10">
           <div className="flex items-center justify-between">
             <DialogTitle className="font-display text-2xl flex items-center gap-2">
               <Ruler className="h-5 w-5 text-[#8b6540]" /> Size Guide
@@ -78,7 +78,7 @@ export function SizeGuideModal({ hasHumanSizes, hasPetSizes, children }: SizeGui
           </div>
         </DialogHeader>
 
-        <div className="p-6 pt-4">
+        <div className="p-5 md:p-6 pt-4 overflow-y-auto flex-1 pb-16 md:pb-6">
           {activeTab === "chart" && (
             <div className="animate-in fade-in duration-300">
               {activeSubject === "human" ? (
