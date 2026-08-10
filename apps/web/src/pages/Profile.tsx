@@ -52,7 +52,7 @@ export default function Profile() {
   
   const [formData, setFormData] = useState({
     full_name: "",
-    phone: "+91 ",
+    phone: "",
   });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -101,7 +101,7 @@ export default function Profile() {
     if (profile) {
       setFormData({
         full_name: profile.full_name || "",
-        phone: profile.phone || "+91 ",
+        phone: profile.phone || "",
       });
       setAvatarUrl(profile.avatar_url);
     }
@@ -123,7 +123,7 @@ export default function Profile() {
     setUploading(true);
     try {
       const compressedBlob = await compressImageToWebP(file, { maxWidth: 300, maxHeight: 300, quality: 0.8 });
-      const fileName = `${user.id}/avatar.webp`;
+      const fileName = `${user.id}/avatar_${Date.now()}.webp`;
 
       // Upload to storage
       const { error: uploadError } = await supabase.storage
@@ -137,7 +137,7 @@ export default function Profile() {
         .from("avatars")
         .getPublicUrl(fileName);
 
-      // Update profile
+      // Update profile with public URL
       const { error: updateError } = await updateProfile({ avatar_url: publicUrl });
       if (updateError) throw updateError;
 
@@ -147,6 +147,9 @@ export default function Profile() {
       toast.error("Failed to upload photo", { description: getErrorMessage(error) });
     } finally {
       setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -169,8 +172,8 @@ export default function Profile() {
     setSaving(true);
     try {
       const { error } = await updateProfile({
-        full_name: formData.full_name,
-        phone: isPhoneEmpty ? null : formData.phone,
+        full_name: formData.full_name.trim(),
+        phone: isPhoneEmpty ? null : formData.phone.trim(),
       });
       if (error) {
         const msg = getErrorMessage(error);
@@ -295,6 +298,7 @@ export default function Profile() {
                           name="full_name"
                           value={formData.full_name}
                           onChange={handleInputChange}
+                          onFocus={(e) => e.target.select()}
                           placeholder="Enter your full name"
                         />
                       </div>
@@ -307,6 +311,7 @@ export default function Profile() {
                             name="phone"
                             value={formData.phone}
                             onChange={handleInputChange}
+                            onFocus={(e) => e.target.select()}
                             placeholder="+91 9876543210"
                             className={[
                               "pl-10",

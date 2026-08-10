@@ -56,14 +56,13 @@ export default function Cart() {
             <div className="divide-y divide-border">
               {cartItems.map((item) => {
                 const isMatchingSet = item.ownerSize !== "N/A" && item.petSize !== "N/A";
+                const isStandard = item.ownerSize === "N/A" && item.petSize === "N/A";
                 const halfPrice = Math.round(item.price * 0.5);
-                const isMatchingSetProduct = item.type === "combo" || isMatchingSet;
-                
-                const displayUnitPrice = isMatchingSetProduct ? halfPrice : item.price;
-                const lineTotal = isMatchingSetProduct
-                  ? (item.ownerSize !== "N/A" ? item.ownerQuantity * halfPrice : 0) +
-                    (item.petSize !== "N/A" ? item.petQuantity * halfPrice : 0)
-                  : item.price * item.quantity;
+                const displayUnitPrice = isMatchingSet ? halfPrice : item.price;
+                const totalItemQty = (item.ownerQuantity || 0) + (item.petQuantity || 0) || item.quantity || 1;
+                const lineTotal = isMatchingSet
+                  ? ((item.ownerQuantity || 0) * halfPrice) + ((item.petQuantity || 0) * halfPrice)
+                  : item.price * totalItemQty;
 
                 return (
                   <div
@@ -171,6 +170,31 @@ export default function Cart() {
                               className="flex h-8 w-8 items-center justify-center transition-colors hover:bg-muted"
                               title="Increase pet quantity"
                               aria-label="Increase pet quantity"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {isStandard && (
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground">Qty</span>
+                          <div className="flex items-center border border-border">
+                            <button
+                              onClick={() => updateQuantity(item.id, item.ownerSize, item.petSize, totalItemQty - 1, 0)}
+                              className="flex h-8 w-8 items-center justify-center transition-colors hover:bg-muted"
+                              title="Decrease quantity"
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-8 text-center font-body text-xs">{totalItemQty}</span>
+                            <button
+                              onClick={() => updateQuantity(item.id, item.ownerSize, item.petSize, totalItemQty + 1, 0)}
+                              className="flex h-8 w-8 items-center justify-center transition-colors hover:bg-muted"
+                              title="Increase quantity"
+                              aria-label="Increase quantity"
                             >
                               <Plus className="h-3 w-3" />
                             </button>

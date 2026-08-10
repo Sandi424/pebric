@@ -201,11 +201,11 @@ function AddressFormContent({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="label">Label (Home, Work, etc) <span className="text-destructive">*</span></Label>
-          <Input id="label" value={address.label} onChange={(e) => onChange({ ...address, label: e.target.value })} required />
+          <Input id="label" value={address.label} onChange={(e) => onChange({ ...address, label: e.target.value })} onFocus={(e) => e.target.select()} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="full_name">Full Name <span className="text-destructive">*</span></Label>
-          <Input id="full_name" value={address.full_name} onChange={(e) => onChange({ ...address, full_name: e.target.value })} required />
+          <Input id="full_name" value={address.full_name} onChange={(e) => onChange({ ...address, full_name: e.target.value })} onFocus={(e) => e.target.select()} required />
         </div>
       </div>
 
@@ -216,6 +216,7 @@ function AddressFormContent({
           type="tel"
           value={address.phone || ""} 
           onChange={(e) => onChange({ ...address, phone: e.target.value })} 
+          onFocus={(e) => e.target.select()}
           required 
           className={phoneInvalid ? "border-destructive" : ""}
         />
@@ -229,6 +230,7 @@ function AddressFormContent({
             id="postal_code"
             value={address.postal_code}
             onChange={handlePincodeChange}
+            onFocus={(e) => e.target.select()}
             required
             maxLength={6}
             inputMode="numeric"
@@ -249,17 +251,17 @@ function AddressFormContent({
 
       <div className="space-y-2">
         <Label htmlFor="address_line1">Flat, House no., Building <span className="text-destructive">*</span></Label>
-        <Input id="address_line1" value={address.address_line1} onChange={(e) => onChange({ ...address, address_line1: e.target.value })} required />
+        <Input id="address_line1" value={address.address_line1} onChange={(e) => onChange({ ...address, address_line1: e.target.value })} onFocus={(e) => e.target.select()} required />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="address_line2">Area, Street, Sector (Optional)</Label>
-        <Input id="address_line2" value={address.address_line2 || ""} onChange={(e) => onChange({ ...address, address_line2: e.target.value })} />
+        <Input id="address_line2" value={address.address_line2 || ""} onChange={(e) => onChange({ ...address, address_line2: e.target.value })} onFocus={(e) => e.target.select()} />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="landmark">Landmark (Optional)</Label>
-        <Input id="landmark" value={address.landmark || ""} onChange={(e) => onChange({ ...address, landmark: e.target.value })} placeholder="E.g. near apollo hospital" />
+        <Input id="landmark" value={address.landmark || ""} onChange={(e) => onChange({ ...address, landmark: e.target.value })} onFocus={(e) => e.target.select()} placeholder="E.g. near apollo hospital" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

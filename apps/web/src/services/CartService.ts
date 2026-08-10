@@ -313,20 +313,20 @@ export class CartService {
    * Calculate cart totals
    */
   static calculateTotals(items: CartItemData[]): CartTotals {
-    const itemCount = items.reduce((sum, item) => sum + (item.ownerQuantity + item.petQuantity || item.quantity), 0);
+    const itemCount = items.reduce((sum, item) => sum + ((item.ownerQuantity || 0) + (item.petQuantity || 0) || item.quantity || 1), 0);
     const subtotal = items.reduce((sum, item) => {
       const isMatchingSet = item.ownerSize !== 'N/A' && item.petSize !== 'N/A';
       if (isMatchingSet) {
         const halfPrice = Math.round(item.price * 0.5);
-        return sum + (item.ownerSize !== 'N/A' ? item.ownerQuantity * halfPrice : 0) +
-                     (item.petSize !== 'N/A' ? item.petQuantity * halfPrice : 0);
+        return sum + (item.ownerSize !== 'N/A' ? (item.ownerQuantity || 0) * halfPrice : 0) +
+                     (item.petSize !== 'N/A' ? (item.petQuantity || 0) * halfPrice : 0);
       } else {
-        if (item.ownerSize !== 'N/A') {
-          return sum + item.price * item.ownerQuantity;
-        } else if (item.petSize !== 'N/A') {
-          return sum + item.price * item.petQuantity;
-        }
-        return sum + item.price * item.quantity;
+        const qty = item.ownerSize !== 'N/A'
+          ? (item.ownerQuantity || item.quantity || 1)
+          : item.petSize !== 'N/A'
+            ? (item.petQuantity || item.quantity || 1)
+            : (item.quantity || (item.ownerQuantity + item.petQuantity) || 1);
+        return sum + item.price * qty;
       }
     }, 0);
 

@@ -506,18 +506,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const petSize = CartItemModel.normalizeSize(item.petSize);
 
     const isCombo = ownerSize !== "N/A" && petSize !== "N/A";
+    const isStandard = ownerSize === "N/A" && petSize === "N/A";
     const itemOwnerQty = item.ownerQuantity !== undefined ? item.ownerQuantity : (ownerSize !== "N/A" ? quantity : 0);
     const itemPetQty = item.petQuantity !== undefined ? item.petQuantity : (petSize !== "N/A" ? quantity : 0);
-    const combinedQuantity = itemOwnerQty + itemPetQty;
+    const combinedQuantity = isStandard
+      ? (item.ownerQuantity || item.petQuantity || quantity || 1)
+      : (itemOwnerQty + itemPetQty);
 
     const newItem: CartItem = {
       ...item,
       ownerSize,
       petSize,
-      ownerQuantity: itemOwnerQty,
+      ownerQuantity: isStandard ? combinedQuantity : itemOwnerQty,
       petQuantity: itemPetQty,
       quantity: combinedQuantity,
-      type: isCombo ? "combo" : (ownerSize !== "N/A" ? "owner" : "pet"),
+      type: isCombo ? "combo" : (ownerSize !== "N/A" ? "owner" : (petSize !== "N/A" ? "pet" : "combo")),
     };
 
     setCartItems((prev) => {

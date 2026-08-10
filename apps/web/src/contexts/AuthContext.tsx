@@ -75,19 +75,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setProfile(data);
         }
-      } else if (metadataName) {
-        // If profile doesn't exist but we have name in metadata, create it
+      } else {
+        // If profile row does not exist yet in DB, create it
         const { data: newData } = await supabase
           .from("profiles")
           .insert({
             id: userId,
-            email: authUser.user?.email,
-            full_name: metadataName,
+            email: authUser?.user?.email,
+            full_name: metadataName || null,
           })
           .select()
-          .single();
+          .maybeSingle();
+
         if (newData) {
           setProfile(newData);
+        } else {
+          setProfile({
+            id: userId,
+            email: authUser?.user?.email || null,
+            full_name: metadataName || null,
+            phone: null,
+            avatar_url: null,
+            address: null,
+            city: null,
+            postal_code: null,
+            country: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as Profile);
         }
       }
     }
@@ -210,15 +225,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .eq("id", user.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (!updateError && updatedData) {
       setProfile(updatedData);
+      if (updates.full_name !== undefined) {
+        try {
+          await supabase.auth.updateUser({
+            data: { full_name: updates.full_name },
+          });
+        } catch (err) {
+          console.warn("Could not sync auth metadata:", err);
+        }
+      }
       return { error: null };
     }
 
-    // If row didn't exist (PGRST116 = no rows returned), INSERT it
-    if (updateError && (updateError.code === "PGRST116" || updateError.message?.includes("no rows"))) {
+    // If row didn't exist, INSERT it
+    if (!updatedData || (updateError && (updateError.code === "PGRST116" || updateError.message?.includes("no rows")))) {
       const { data: insertedData, error: insertError } = await supabase
         .from("profiles")
         .insert({
@@ -227,14 +251,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...updates,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (!insertError && insertedData) {
         setProfile(insertedData);
+        if (updates.full_name !== undefined) {
+          try {
+            await supabase.auth.updateUser({
+              data: { full_name: updates.full_name },
+            });
+          } catch (err) {
+            console.warn("Could not sync auth metadata:", err);
+          }
+        }
         return { error: null };
       }
 
-      return { error: insertError };
+      return { error: insertError || updateError };
     }
 
     return { error: updateError };

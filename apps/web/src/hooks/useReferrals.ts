@@ -34,11 +34,10 @@ export function useReferralCode() {
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
       if (error) throw error;
-      return data as ReferralCode | null;
+      return (data?.[0] as ReferralCode) || null;
     },
     enabled: !!user,
   });
@@ -53,16 +52,15 @@ export function useCreateReferralCode() {
       if (!user) throw new Error("Not authenticated");
       
       // Check if user already has a referral code
-      const { data: existing } = await supabase
+      const { data: existing, error: checkError } = await supabase
         .from("referral_codes")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
-      if (existing) {
-        return existing as ReferralCode;
+      if (!checkError && existing && existing.length > 0) {
+        return existing[0] as ReferralCode;
       }
       
       // Generate unique code
@@ -80,9 +78,10 @@ export function useCreateReferralCode() {
       if (error) throw error;
       return data as ReferralCode;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      queryClient.setQueryData(["referral-code", user?.id], data);
       queryClient.invalidateQueries({ queryKey: ["referral-code"] });
-      toast.success("Referral code created!");
+      toast.success("Referral code ready!");
     },
     onError: (error) => {
       toast.error("Failed to create code", { description: error.message });
@@ -119,12 +118,13 @@ export function useApplyReferralCode() {
       if (!user) throw new Error("Not authenticated");
       
       // Find the referral code
-      const { data: referralCode, error: codeError } = await supabase
+      const { data: referralCodes, error: codeError } = await supabase
         .from("referral_codes")
         .select("*")
         .eq("code", code.toUpperCase())
-        .maybeSingle();
+        .limit(1);
 
+      const referralCode = referralCodes?.[0];
       if (codeError || !referralCode) {
         throw new Error("Invalid referral code");
       }
@@ -134,13 +134,13 @@ export function useApplyReferralCode() {
       }
 
       // Check if already referred
-      const { data: existing } = await supabase
+      const { data: existingRows } = await supabase
         .from("referrals")
         .select("id")
         .eq("referred_id", user.id)
-        .maybeSingle();
+        .limit(1);
 
-      if (existing) {
+      if (existingRows && existingRows.length > 0) {
         throw new Error("You have already used a referral code");
       }
 

@@ -27,15 +27,15 @@ export class CartItemModel {
     const isMatchingSet = this.ownerSize !== 'N/A' && this.petSize !== 'N/A';
     if (isMatchingSet) {
       const halfPrice = Math.round(this.price * 0.5);
-      return (this.ownerSize !== 'N/A' ? this.ownerQuantity * halfPrice : 0) +
-             (this.petSize !== 'N/A' ? this.petQuantity * halfPrice : 0);
+      return (this.ownerSize !== 'N/A' ? (this.ownerQuantity || 0) * halfPrice : 0) +
+             (this.petSize !== 'N/A' ? (this.petQuantity || 0) * halfPrice : 0);
     } else {
       if (this.ownerSize !== 'N/A') {
-        return this.price * this.ownerQuantity;
+        return this.price * (this.ownerQuantity || this.quantity || 1);
       } else if (this.petSize !== 'N/A') {
-        return this.price * this.petQuantity;
+        return this.price * (this.petQuantity || this.quantity || 1);
       }
-      return this.price * this.quantity;
+      return this.price * (this.quantity || (this.ownerQuantity + this.petQuantity) || 1);
     }
   }
 

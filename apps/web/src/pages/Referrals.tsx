@@ -136,6 +136,7 @@ export default function Referrals() {
                 <Input
                   value={applyCodeInput}
                   onChange={(e) => setApplyCodeInput(e.target.value.toUpperCase())}
+                  onFocus={(e) => e.target.select()}
                   placeholder="Enter referral code"
                   className="flex-1"
                 />
