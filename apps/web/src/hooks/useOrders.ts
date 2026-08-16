@@ -89,6 +89,43 @@ export interface Order {
   coupon_uses?: OrderCouponUse[];
 }
 
+const ORDERS_STORAGE_PREFIX = "pebric_user_orders_";
+const CANCELLED_ORDERS_PREFIX = "pebric_cancelled_orders_";
+
+export function getLocalOrders(userId: string): Order[] {
+  try {
+    const raw = localStorage.getItem(`${ORDERS_STORAGE_PREFIX}${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalOrders(userId: string, orders: Order[]) {
+  try {
+    localStorage.setItem(`${ORDERS_STORAGE_PREFIX}${userId}`, JSON.stringify(orders));
+  } catch (e) {
+    console.warn("Failed to persist orders to localStorage:", e);
+  }
+}
+
+export function getLocalCancelledIds(userId: string): string[] {
+  try {
+    const raw = localStorage.getItem(`${CANCELLED_ORDERS_PREFIX}${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalCancelledIds(userId: string, ids: string[]) {
+  try {
+    localStorage.setItem(`${CANCELLED_ORDERS_PREFIX}${userId}`, JSON.stringify(ids));
+  } catch (e) {
+    console.warn("Failed to persist cancelled order IDs to localStorage:", e);
+  }
+}
+
 export function useOrders() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -98,8 +135,15 @@ export function useOrders() {
     queryFn: async () => {
       if (!user) return [];
       
-      const { data: userData } = await supabase.auth.getUser();
-      const currentUser = userData?.user || user;
+      let currentUser = user;
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          currentUser = userData.user;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch fresh user in useOrders:", e);
+      }
 
       let dbOrders: Order[] = [];
       try {
@@ -128,9 +172,16 @@ export function useOrders() {
         user_id: user.id,
       }));
 
+      const localOrders = getLocalOrders(user.id);
+
       const combinedMap = new Map<string, Order>();
       dbOrders.forEach((o) => combinedMap.set(o.id, o));
       metaOrders.forEach((o) => {
+        if (!combinedMap.has(o.id)) {
+          combinedMap.set(o.id, o);
+        }
+      });
+      localOrders.forEach((o) => {
         if (!combinedMap.has(o.id)) {
           combinedMap.set(o.id, o);
         }
@@ -148,7 +199,17 @@ export function useOrders() {
         console.warn("Could not fetch catalog products for order enrichment:", err);
       }
 
-      return Array.from(combinedMap.values()).map((ord) => {
+      const localCancelledIds = getLocalCancelledIds(user.id);
+      const metaCancelledIds: string[] = currentUser.user_metadata?.cancelled_order_ids || [];
+      const cancelledIds = new Set([...localCancelledIds, ...metaCancelledIds]);
+
+      const allOrders = Array.from(combinedMap.values()).map((ord) => {
+        const isCancelled =
+          cancelledIds.has(ord.id) ||
+          cancelledIds.has(ord.order_number) ||
+          ord.status === "cancelled";
+        const currentStatus = isCancelled ? "cancelled" : ord.status;
+
         const items = (ord.items || []).map((item) => {
           const product = item.product_id ? productsMap.get(item.product_id) : null;
           const name =
@@ -200,6 +261,7 @@ export function useOrders() {
 
         return {
           ...ord,
+          status: currentStatus,
           subtotal,
           shipping_cost: shippingCost,
           tax,
@@ -207,6 +269,11 @@ export function useOrders() {
           items,
         };
       });
+
+      // Keep localStorage synchronized with latest enriched orders
+      saveLocalOrders(user.id, allOrders);
+
+      return allOrders;
     },
     enabled: !!user,
   });
@@ -498,13 +565,6 @@ export function useCreateOrder() {
               created_at: new Date().toISOString(),
             })),
           } as unknown as Order;
-
-          const existingMetaOrders = user.user_metadata?.user_orders || [];
-          await supabase.auth.updateUser({
-            data: {
-              user_orders: [finalOrder, ...existingMetaOrders],
-            },
-          });
         }
 
         if (input.clearUserCart !== false) {
@@ -518,6 +578,36 @@ export function useCreateOrder() {
 
       if (!finalOrder) {
         throw new Error("Failed to create order");
+      }
+
+      // 1. Immediately cache in localStorage for resilient persistence
+      try {
+        const existingLocal = getLocalOrders(user.id);
+        const updatedLocal = [
+          finalOrder,
+          ...existingLocal.filter((o) => o.id !== finalOrder!.id && o.order_number !== finalOrder!.order_number),
+        ];
+        saveLocalOrders(user.id, updatedLocal);
+      } catch (localErr) {
+        console.warn("Failed to persist new order to localStorage:", localErr);
+      }
+
+      // 2. Persist to auth user_metadata using fresh session user
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const freshUser = userData?.user || user;
+        const existingMetaOrders = freshUser.user_metadata?.user_orders || [];
+        const updatedMetaOrders = [
+          finalOrder,
+          ...existingMetaOrders.filter((o: any) => o.id !== finalOrder!.id && o.order_number !== finalOrder!.order_number),
+        ];
+        await supabase.auth.updateUser({
+          data: {
+            user_orders: updatedMetaOrders,
+          },
+        });
+      } catch (metaErr) {
+        console.warn("User metadata update error in useCreateOrder:", metaErr);
       }
 
       if (input.clearUserCart !== false) {
@@ -539,6 +629,7 @@ export function useCreateOrder() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
       queryClient.invalidateQueries({ queryKey: ["cart"] });
     },
     onError: (error) => {

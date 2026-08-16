@@ -9,7 +9,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { RefreshCw, Check } from "lucide-react";
+import { RefreshCw, Check, Loader2 } from "lucide-react";
+import { useCreateSubscription } from "@/hooks/useSubscriptions";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface SubscribeButtonProps {
   product: any;
@@ -38,7 +41,10 @@ export function SubscribeButton({
 }: SubscribeButtonProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [frequency, setFrequency] = useState("monthly");
+  const [isSubscribing, setIsSubscribing] = useState(false);
   const navigate = useNavigate();
+  const createSubscription = useCreateSubscription();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (defaultOpen) {
@@ -52,28 +58,53 @@ export function SubscribeButton({
   
   const isMatchingSet = product.sizes && product.sizes.length > 0 && product.pet_sizes && product.pet_sizes.length > 0;
 
-  const handleSubscribe = () => {
-    const totalQty = (selectedSize ? parentQuantity : 0) + (selectedPetSize ? petQuantity : 0) || 1;
-    navigate("/checkout", {
-      state: {
-        buyNowItems: [{
-          id: product.id,
-          name: product.name,
-          price: product.price * (1 - discount),
-          image: product.image_url || "/product-1.jpg",
-          ownerSize: selectedSize || "N/A",
-          petSize: selectedPetSize || "N/A",
-          slug: product.slug,
-          quantity: totalQty,
-          ownerQuantity: selectedSize ? parentQuantity : 0,
-          petQuantity: selectedPetSize ? petQuantity : 0,
-          type: isMatchingSet ? "combo" : "owner",
-          isSubscription: true,
-          frequency
-        }]
-      }
-    });
-    setIsOpen(false);
+  const handleSubscribe = async () => {
+    if (!user) {
+      toast.error("Please log in to subscribe");
+      navigate("/login");
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      const totalQty = (selectedSize ? parentQuantity : 0) + (selectedPetSize ? petQuantity : 0) || 1;
+
+      // Create subscription record in the database
+      await createSubscription.mutateAsync({
+        productId: product.id,
+        frequency,
+        quantity: totalQty,
+        size: selectedSize || null,
+        petSize: selectedPetSize || null,
+      });
+
+      // Navigate to checkout with subscription items
+      navigate("/checkout", {
+        state: {
+          buyNowItems: [{
+            id: product.id,
+            name: product.name,
+            price: product.price * (1 - discount),
+            image: product.image_url || "/product-1.jpg",
+            ownerSize: selectedSize || "N/A",
+            petSize: selectedPetSize || "N/A",
+            slug: product.slug,
+            quantity: totalQty,
+            ownerQuantity: selectedSize ? parentQuantity : 0,
+            petQuantity: selectedPetSize ? petQuantity : 0,
+            type: isMatchingSet ? "combo" : "owner",
+            isSubscription: true,
+            frequency
+          }]
+        }
+      });
+      setIsOpen(false);
+    } catch (error: any) {
+      console.error("Subscription creation failed:", error);
+      // Toast is already shown by the hook's onError handler
+    } finally {
+      setIsSubscribing(false);
+    }
   };
 
   return (
@@ -145,9 +176,17 @@ export function SubscribeButton({
 
           <Button 
             onClick={handleSubscribe} 
-            className="w-full" 
+            className="w-full"
+            disabled={isSubscribing}
           >
-            Start Subscription
+            {isSubscribing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating Subscription...
+              </>
+            ) : (
+              "Start Subscription"
+            )}
           </Button>
         </div>
       </DialogContent>

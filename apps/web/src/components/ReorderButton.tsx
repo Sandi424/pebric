@@ -90,17 +90,13 @@ export function ReorderButton({ orderItems, variant = "outline", size = "sm" }: 
         const isMatchingSet = ownerSize !== "N/A" && petSize !== "N/A";
         const isStandard = ownerSize === "N/A" && petSize === "N/A";
 
-        const basePrice = product ? Number(product.price || 0) : group.unitPrice;
-        const price = (isMatchingSet || isStandard) ? basePrice : Math.round(basePrice * 0.5);
-        const name = product
-          ? (isMatchingSet
-              ? `${product.name} (Matching Set)`
-              : ownerSize !== "N/A"
-                ? `${product.name} (Owner Only)`
-                : petSize !== "N/A"
-                  ? `${product.name} (Pet Only)`
-                  : product.name)
-          : group.productName;
+        // Use the full catalog price — same as normal Add to Cart.
+        // The cart display (Cart.tsx) and CartService.calculateTotals handle
+        // half-price splitting for matching sets internally.
+        const price = product ? Number(product.price || 0) : group.unitPrice;
+
+        // Use the product name as-is — same as normal Add to Cart
+        const name = product?.name || group.productName;
 
         const image = product?.image_url || group.productImage || "/product-1.jpg";
         const slug = product?.slug || "product";
@@ -112,6 +108,9 @@ export function ReorderButton({ orderItems, variant = "outline", size = "sm" }: 
           ? 0
           : (petSize !== "N/A" ? group.quantity : 0);
 
+        // Set the type the same way normal Add to Cart does
+        const type = isMatchingSet ? "combo" : (ownerSize !== "N/A" ? "owner" : (petSize !== "N/A" ? "pet" : "combo"));
+
         await addToCart({
           id: group.productId,
           name,
@@ -120,6 +119,7 @@ export function ReorderButton({ orderItems, variant = "outline", size = "sm" }: 
           ownerSize,
           petSize,
           slug,
+          type,
           ownerQuantity: ownerQty,
           petQuantity: petQty,
         });

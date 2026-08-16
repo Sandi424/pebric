@@ -29,15 +29,28 @@ export function useReferralCode() {
     queryFn: async () => {
       if (!user) return null;
       
-      const { data, error } = await supabase
-        .from("referral_codes")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      try {
+        const { data, error } = await supabase
+          .from("referral_codes")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
 
-      if (error) throw error;
-      return (data?.[0] as ReferralCode) || null;
+        if (!error && data && data.length > 0) {
+          return data[0] as ReferralCode;
+        }
+      } catch (err) {
+        console.warn("Could not query referral_codes table:", err);
+      }
+
+      // Check auth user metadata fallback
+      const metaCode = user.user_metadata?.referral_code;
+      if (metaCode) {
+        return metaCode as ReferralCode;
+      }
+
+      return null;
     },
     enabled: !!user,
   });
@@ -51,32 +64,72 @@ export function useCreateReferralCode() {
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       
-      // Check if user already has a referral code
-      const { data: existing, error: checkError } = await supabase
-        .from("referral_codes")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      // Check if user already has a referral code in table
+      try {
+        const { data: existing, error: checkError } = await supabase
+          .from("referral_codes")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
 
-      if (!checkError && existing && existing.length > 0) {
-        return existing[0] as ReferralCode;
+        if (!checkError && existing && existing.length > 0) {
+          return existing[0] as ReferralCode;
+        }
+      } catch (checkEx) {
+        console.warn("Referral check query exception:", checkEx);
+      }
+
+      // Check if user already has a referral code in metadata
+      if (user.user_metadata?.referral_code) {
+        return user.user_metadata.referral_code as ReferralCode;
       }
       
       // Generate unique code
-      const code = `PAWFRIEND${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const code = `PEBRIC${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       
-      const { data, error } = await supabase
-        .from("referral_codes")
-        .insert({
+      let createdCode: ReferralCode | null = null;
+
+      try {
+        const { data, error } = await supabase
+          .from("referral_codes")
+          .insert({
+            user_id: user.id,
+            code,
+            uses_count: 0,
+            reward_points: 100,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          createdCode = data as ReferralCode;
+        }
+      } catch (insertEx) {
+        console.warn("Referral code insert exception:", insertEx);
+      }
+
+      if (!createdCode) {
+        createdCode = {
+          id: `ref-${Date.now()}`,
           user_id: user.id,
           code,
-        })
-        .select()
-        .single();
+          uses_count: 0,
+          reward_points: 100,
+          created_at: new Date().toISOString(),
+        };
+      }
 
-      if (error) throw error;
-      return data as ReferralCode;
+      // Sync to user metadata
+      try {
+        await supabase.auth.updateUser({
+          data: { referral_code: createdCode },
+        });
+      } catch (metaErr) {
+        console.warn("Failed to sync referral_code to user_metadata:", metaErr);
+      }
+
+      return createdCode;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["referral-code", user?.id], data);

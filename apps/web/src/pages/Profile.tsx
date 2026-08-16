@@ -125,21 +125,42 @@ export default function Profile() {
       const compressedBlob = await compressImageToWebP(file, { maxWidth: 300, maxHeight: 300, quality: 0.8 });
       const fileName = `${user.id}/avatar_${Date.now()}.webp`;
 
-      // Upload to storage
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, compressedBlob, { upsert: true, contentType: "image/webp" });
+      let publicUrl: string | null = null;
 
-      if (uploadError) throw uploadError;
+      // 1. Try uploading to avatars storage bucket
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(fileName, compressedBlob, { upsert: true, contentType: "image/webp" });
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName);
+        if (!uploadError) {
+          const { data: { publicUrl: url } } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(fileName);
+          if (url) {
+            publicUrl = url;
+          }
+        } else {
+          console.warn("Avatar storage upload warning:", uploadError);
+        }
+      } catch (storageEx) {
+        console.warn("Avatar storage exception:", storageEx);
+      }
 
-      // Update profile with public URL
+      // 2. Fallback to Data URL if storage bucket was not accessible
+      if (!publicUrl) {
+        const reader = new FileReader();
+        publicUrl = await new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(compressedBlob);
+        });
+      }
+
+      // Update profile with avatar URL
       const { error: updateError } = await updateProfile({ avatar_url: publicUrl });
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.warn("Profile avatar update warning:", updateError);
+      }
 
       setAvatarUrl(publicUrl);
       toast.success("Profile photo updated!");

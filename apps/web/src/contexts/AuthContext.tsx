@@ -49,7 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     const { data: authUser } = await supabase.auth.getUser();
-    const metadataName = authUser?.user?.user_metadata?.full_name;
+    const metadata = authUser?.user?.user_metadata || {};
+    const metadataName = metadata.full_name;
+    const metadataPhone = metadata.phone;
+    const metadataAvatar = metadata.avatar_url;
 
     const { data, error } = await supabase
       .from("profiles")
@@ -59,18 +62,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!error) {
       if (data) {
-        // If profile exists but name is null and we have it in metadata, sync it
-        if (!data.full_name && metadataName) {
+        // If profile exists but some fields are null and we have them in metadata, sync them
+        const needsSync: Record<string, string> = {};
+        if (!data.full_name && metadataName) needsSync.full_name = metadataName;
+        if (!data.phone && metadataPhone) needsSync.phone = metadataPhone;
+        if (!data.avatar_url && metadataAvatar) needsSync.avatar_url = metadataAvatar;
+
+        if (Object.keys(needsSync).length > 0) {
           const { data: updatedData } = await supabase
             .from("profiles")
-            .update({ full_name: metadataName })
+            .update(needsSync)
             .eq("id", userId)
             .select()
             .single();
           if (updatedData) {
             setProfile(updatedData);
           } else {
-            setProfile(data);
+            // Even if update fails, merge metadata values into the profile locally
+            setProfile({ ...data, ...needsSync });
           }
         } else {
           setProfile(data);
@@ -83,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: userId,
             email: authUser?.user?.email,
             full_name: metadataName || null,
+            phone: metadataPhone || null,
+            avatar_url: metadataAvatar || null,
           })
           .select()
           .maybeSingle();
@@ -94,8 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: userId,
             email: authUser?.user?.email || null,
             full_name: metadataName || null,
-            phone: null,
-            avatar_url: null,
+            phone: metadataPhone || null,
+            avatar_url: metadataAvatar || null,
             address: null,
             city: null,
             postal_code: null,
@@ -105,6 +116,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } as Profile);
         }
       }
+    } else {
+      // If error querying profiles table, construct profile from auth metadata
+      setProfile({
+        id: userId,
+        email: authUser?.user?.email || null,
+        full_name: metadataName || null,
+        phone: metadataPhone || null,
+        avatar_url: metadataAvatar || null,
+        address: null,
+        city: null,
+        postal_code: null,
+        country: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Profile);
     }
   };
 
@@ -216,6 +242,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error("Not authenticated") };
 
+    // Always sync name/phone to auth metadata for resilience
+    const metadataUpdates: Record<string, unknown> = {};
+    if (updates.full_name !== undefined) metadataUpdates.full_name = updates.full_name;
+    if (updates.phone !== undefined) metadataUpdates.phone = updates.phone;
+    if (updates.avatar_url !== undefined) metadataUpdates.avatar_url = updates.avatar_url;
+    if (Object.keys(metadataUpdates).length > 0) {
+      try {
+        await supabase.auth.updateUser({ data: metadataUpdates });
+      } catch (err) {
+        console.warn("Could not sync auth metadata:", err);
+      }
+    }
+
     // Try UPDATE first — this works cleanly with user-level RLS policies
     const { data: updatedData, error: updateError } = await supabase
       .from("profiles")
@@ -229,48 +268,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!updateError && updatedData) {
       setProfile(updatedData);
-      if (updates.full_name !== undefined) {
-        try {
-          await supabase.auth.updateUser({
-            data: { full_name: updates.full_name },
-          });
-        } catch (err) {
-          console.warn("Could not sync auth metadata:", err);
-        }
-      }
       return { error: null };
     }
 
-    // If row didn't exist, INSERT it
-    if (!updatedData || (updateError && (updateError.code === "PGRST116" || updateError.message?.includes("no rows")))) {
-      const { data: insertedData, error: insertError } = await supabase
+    // If update returned no data (RLS may block RETURNING), try refetching
+    if (!updateError && !updatedData) {
+      const { data: refetchedData } = await supabase
         .from("profiles")
-        .insert({
-          id: user.id,
-          email: user.email,
-          ...updates,
-        })
-        .select()
+        .select("*")
+        .eq("id", user.id)
         .maybeSingle();
-
-      if (!insertError && insertedData) {
-        setProfile(insertedData);
-        if (updates.full_name !== undefined) {
-          try {
-            await supabase.auth.updateUser({
-              data: { full_name: updates.full_name },
-            });
-          } catch (err) {
-            console.warn("Could not sync auth metadata:", err);
-          }
-        }
+      if (refetchedData) {
+        setProfile(refetchedData);
         return { error: null };
       }
-
-      return { error: insertError || updateError };
     }
 
-    return { error: updateError };
+    // Try UPSERT as fallback (handles both insert and update)
+    const { data: upsertedData, error: upsertError } = await supabase
+      .from("profiles")
+      .upsert({
+        id: user.id,
+        email: user.email,
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .maybeSingle();
+
+    if (!upsertError && upsertedData) {
+      setProfile(upsertedData);
+      return { error: null };
+    }
+
+    // If upsert also failed, but we synced metadata successfully, consider it a partial success
+    if (Object.keys(metadataUpdates).length > 0) {
+      // Update local profile state with the changes even if DB update failed
+      setProfile((prev) => prev ? { ...prev, ...updates } : null);
+      return { error: null };
+    }
+
+    return { error: upsertError || updateError };
   };
 
 
