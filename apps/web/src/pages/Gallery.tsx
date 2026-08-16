@@ -475,11 +475,16 @@ function UploadDialog() {
   const handleSubmit = async () => {
     if (!file) return;
 
+    const selectedPet = pets.find((p) => p.id === petId);
+    const selectedProduct = products.find((p) => p.id === productId);
+
     await createPost.mutateAsync({
       imageFile: file,
       petId: petId || undefined,
       productId: productId || undefined,
       caption: caption || undefined,
+      petDetails: selectedPet ? { name: selectedPet.name, breed: selectedPet.breed } : undefined,
+      productDetails: selectedProduct ? { name: selectedProduct.name, slug: selectedProduct.slug } : undefined,
     });
 
     setOpen(false);
@@ -546,25 +551,41 @@ function UploadDialog() {
             </label>
           )}
 
-          <Select value={petId} onValueChange={setPetId}>
+          <Select
+            value={petId}
+            onValueChange={(val) => setPetId(val === "none" ? "" : val)}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Select your pet (optional)" />
             </SelectTrigger>
             <SelectContent>
-              {pets.map((pet) => (
-                <SelectItem key={pet.id} value={pet.id}>
-                  {pet.name} ({pet.species})
+              {pets.length > 0 ? (
+                <>
+                  <SelectItem value="none">None (No pet)</SelectItem>
+                  {pets.map((pet) => (
+                    <SelectItem key={pet.id} value={pet.id}>
+                      {pet.name} {pet.species ? `(${pet.species})` : ""}
+                    </SelectItem>
+                  ))}
+                </>
+              ) : (
+                <SelectItem value="none">
+                  No pets registered yet (optional)
                 </SelectItem>
-              ))}
+              )}
             </SelectContent>
           </Select>
 
-          <Select value={productId} onValueChange={setProductId}>
+          <Select
+            value={productId}
+            onValueChange={(val) => setProductId(val === "none" ? "" : val)}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Tag a product (optional)" />
             </SelectTrigger>
             <SelectContent>
-              {products.slice(0, 20).map((product) => (
+              <SelectItem value="none">None (No product)</SelectItem>
+              {products.slice(0, 50).map((product) => (
                 <SelectItem key={product.id} value={product.id}>
                   {product.name}
                 </SelectItem>
@@ -588,7 +609,7 @@ function UploadDialog() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            Photos are reviewed before appearing in the gallery
+            Photos appear directly in the community gallery
           </p>
         </div>
       </DialogContent>

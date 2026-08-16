@@ -25,6 +25,25 @@ export interface Pet {
 export type PetInsert = Omit<Pet, "id" | "created_at" | "updated_at">;
 export type PetUpdate = Partial<PetInsert>;
 
+const PETS_STORAGE_PREFIX = "pebric_user_pets_";
+
+export function getLocalPets(userId: string): Pet[] {
+  try {
+    const raw = localStorage.getItem(`${PETS_STORAGE_PREFIX}${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalPets(userId: string, pets: Pet[]) {
+  try {
+    localStorage.setItem(`${PETS_STORAGE_PREFIX}${userId}`, JSON.stringify(pets));
+  } catch (e) {
+    console.warn("Failed to persist pets to localStorage:", e);
+  }
+}
+
 export function usePets() {
   const { user } = useAuth();
 
@@ -34,8 +53,15 @@ export function usePets() {
       if (!user) return [];
 
       // Always fetch fresh user data to get the latest user_metadata after mutations
-      const { data: freshUserData } = await supabase.auth.getUser();
-      const freshUser = freshUserData?.user || user;
+      let freshUser = user;
+      try {
+        const { data: freshUserData } = await supabase.auth.getUser();
+        if (freshUserData?.user) {
+          freshUser = freshUserData.user;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch fresh user in usePets:", e);
+      }
 
       let dbPets: Pet[] = [];
       try {
@@ -72,6 +98,8 @@ export function usePets() {
         updated_at: pet.updated_at || new Date().toISOString(),
       }));
 
+      const localPets = getLocalPets(user.id);
+
       const combinedMap = new Map<string, Pet>();
       dbPets.forEach((p) => combinedMap.set(p.id, p));
       metaPets.forEach((p) => {
@@ -79,8 +107,15 @@ export function usePets() {
           combinedMap.set(p.id, p);
         }
       });
+      localPets.forEach((p) => {
+        if (!combinedMap.has(p.id)) {
+          combinedMap.set(p.id, p);
+        }
+      });
 
-      return Array.from(combinedMap.values());
+      const allPets = Array.from(combinedMap.values());
+      saveLocalPets(user.id, allPets);
+      return allPets;
     },
     enabled: !!user,
   });
